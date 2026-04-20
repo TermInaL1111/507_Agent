@@ -17,7 +17,7 @@ from app.core.rate_limit import RateLimitMiddleware
 from app.core.logger_handler import logger
 
 from app.rag.reorder_service import check_and_download_reranker_model
-
+#commit  zmg1111
 # 加载环境变量
 load_dotenv()
 
