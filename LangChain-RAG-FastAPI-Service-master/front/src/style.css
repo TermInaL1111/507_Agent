@@ -1,20 +1,25 @@
-/* 移动端适配基础样式 */
+/* PC Web 端样式 */
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  /* 主题变量 */
-  --primary-color: #1989fa;
-  --text-color: #333;
-  --text-color-light: #666;
-  --text-color-lighter: #999;
-  --border-color: #ebedf0;
-  --background-color: #f7f8fa;
+  /* Element Plus 主题变量 */
+  --primary-color: #409EFF;
+  --success-color: #67C23A;
+  --warning-color: #E6A23C;
+  --danger-color: #F56C6C;
+  --info-color: #909399;
+  --text-color: #303133;
+  --text-color-regular: #606266;
+  --text-color-secondary: #909399;
+  --border-color: #DCDFE6;
+  --border-color-light: #E4E7ED;
+  --background-color: #f0f2f5;
   --white: #fff;
-  --safe-area-inset-bottom: env(safe-area-inset-bottom);
 
-  color-scheme: light dark;
+  color-scheme: light;
   color: var(--text-color);
   background-color: var(--background-color);
 
@@ -22,10 +27,9 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
 }
 
-/* 移动端适配 */
+/* PC Web 端基础样式 */
 html {
   -webkit-tap-highlight-color: transparent;
 }
@@ -36,13 +40,10 @@ body {
   background-color: var(--background-color);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-y: auto;
+  overflow-y: hidden;
   overflow-x: hidden;
-}
-
-/* 适配iPhone底部安全区域 */
-.van-tabbar {
-  padding-bottom: var(--safe-area-inset-bottom);
+  margin: 0;
+  padding: 0;
 }
 
 /* 滚动条优化 */
@@ -119,31 +120,28 @@ body {
   animation: skeleton-loading 1.4s ease infinite;
 }
 
-/* 点击反馈效果 */
-.click-effect {
-  position: relative;
-  overflow: hidden;
+/* Element Plus 样式微调 */
+.el-button {
+  font-weight: 500;
 }
 
-.click-effect::after {
-  content: '';
-  display: block;
-  position: absolute;
-  width: 100%;
+.el-card {
+  border-radius: 8px;
+}
+
+.el-input__wrapper {
+  border-radius: 4px;
+}
+
+/* 页面内容区域 */
+.page-container {
+  padding: 20px;
   height: 100%;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  background-image: radial-gradient(circle, #000 10%, transparent 10.01%);
-  background-repeat: no-repeat;
-  background-position: 50%;
-  transform: scale(10, 10);
-  opacity: 0;
-  transition: transform 0.5s, opacity 1s;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
-.click-effect:active::after {
-  transform: scale(0, 0);
-  opacity: 0.1;
-  transition: 0s;
+/* 表格行悬停 */
+.el-table__row:hover {
+  cursor: pointer;
 }

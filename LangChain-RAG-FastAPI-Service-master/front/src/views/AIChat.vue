@@ -1,11 +1,16 @@
 <template>
   <div class="ai-chat-container">
-    <van-nav-bar 
-      title="AI问答" 
-      fixed 
-      right-text="会话" 
-      @click-right="goToSessions"
-    />
+    <el-page-header title="AI问答" @back="goToSessions">
+      <template #content>
+        <span class="page-title">AI智能问答</span>
+      </template>
+      <template #extra>
+        <el-button type="primary" @click="goToSessions">
+          <el-icon><ChatLineSquare /></el-icon>
+          会话管理
+        </el-button>
+      </template>
+    </el-page-header>
     
     <div class="chat-content">
       <div class="messages-container" ref="messagesContainer">
@@ -14,6 +19,13 @@
           :key="index"
           :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']"
         >
+          <div class="message-avatar">
+            <el-avatar 
+              :size="40" 
+              :icon="message.role === 'user' ? User : ChatDotRound"
+              :style="{ background: message.role === 'user' ? '#409EFF' : '#67C23A' }"
+            />
+          </div>
           <div class="message-content">
             <div v-if="message.role === 'assistant' && message.content === ''" class="typing-indicator">
               <span></span>
@@ -26,42 +38,41 @@
       </div>
       
       <div class="input-container">
-        <van-field
+        <el-input
           v-model="userInput"
-          rows="1"
-          autosize
           type="textarea"
+          :rows="3"
           placeholder="请输入问题..."
           class="chat-input"
-          @keypress.enter.prevent="sendMessage"
+          resize="none"
+          @keydown.enter.prevent="handleEnter"
         />
-        <van-button 
+        <el-button 
           type="primary" 
+          size="large"
           class="send-button" 
           :disabled="isLoading || !userInput.trim()" 
           @click="sendMessage"
         >
+          <el-icon><Promotion /></el-icon>
           发送
-        </van-button>
+        </el-button>
       </div>
     </div>
-    
-    <tab-bar />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import TabBar from '../components/TabBar.vue';
-import { showToast } from 'vant';
+import { ElMessage } from 'element-plus';
+import { User, ChatDotRound, ChatLineSquare, Promotion } from '@element-plus/icons-vue';
 import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/monokai-sublime.css';
 import 'highlight.js/lib/common';
-import { apiConfig } from '../config/api';
 import { useUserStore } from '../store/user';
 import { useSessionStore } from '../store/session';
 
@@ -117,13 +128,20 @@ const formatMessage = (content) => {
   }
 };
 
+// 处理回车键发送
+const handleEnter = (e) => {
+  if (!e.shiftKey) {
+    sendMessage();
+  }
+};
+
 // 发送消息
 const sendMessage = async () => {
   if (!userInput.value.trim() || isLoading.value) return;
   
   // 检查是否登录
   if (!userStore.getLoginStatus) {
-    showToast('请先登录');
+    ElMessage.warning('请先登录');
     return;
   }
   
@@ -286,11 +304,11 @@ watch(() => route.params.sessionId, async (newSessionId) => {
       if (result.success && sessionStore.currentSession) {
         loadSessionHistory(sessionStore.currentSession);
       } else {
-        showToast('加载会话历史失败');
+        ElMessage.error('加载会话历史失败');
       }
     } catch (error) {
       console.error('加载会话历史失败:', error);
-      showToast('加载会话历史失败');
+      ElMessage.error('加载会话历史失败');
     }
   }
 }, { immediate: true });
@@ -307,11 +325,11 @@ onMounted(async () => {
       if (result.success && sessionStore.currentSession) {
         loadSessionHistory(sessionStore.currentSession);
       } else {
-        showToast('加载会话历史失败');
+        ElMessage.error('加载会话历史失败');
       }
     } catch (error) {
       console.error('加载会话历史失败:', error);
-      showToast('加载会话历史失败');
+      ElMessage.error('加载会话历史失败');
     }
   } else if (sessionStore.currentSession) {
     // 从store中加载会话历史
@@ -341,10 +359,19 @@ const loadSessionHistory = (session) => {
 .ai-chat-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  padding-top: 46px;
-  padding-bottom: 50px;
+  height: 100%;
+  padding: 20px;
   box-sizing: border-box;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+:deep(.el-page-header) {
+  margin-bottom: 20px;
 }
 
 .chat-content {
@@ -357,15 +384,21 @@ const loadSessionHistory = (session) => {
 .messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: 10px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 8px;
+  margin-bottom: 20px;
 }
 
 .message {
-  margin-bottom: 10px;
-  max-width: 80%;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  max-width: 85%;
 }
 
 .user-message {
+  flex-direction: row-reverse;
   margin-left: auto;
 }
 
@@ -373,36 +406,44 @@ const loadSessionHistory = (session) => {
   margin-right: auto;
 }
 
+.message-avatar {
+  flex-shrink: 0;
+}
+
 .message-content {
-  padding: 10px;
-  border-radius: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
   word-break: break-word;
+  line-height: 1.6;
 }
 
 .user-message .message-content {
-  background-color: #007aff;
-  color: white;
+  background-color: #ecf5ff;
+  color: #303133;
+  border: 1px solid #d9ecff;
 }
 
 .ai-message .message-content {
-  background-color: #f2f2f2;
-  color: #333;
+  background-color: #f5f7fa;
+  color: #303133;
+  border: 1px solid #e4e7ed;
 }
 
 .input-container {
   display: flex;
-  padding: 10px;
-  border-top: 1px solid #eee;
+  gap: 12px;
+  padding: 20px;
   background-color: #fff;
+  border-radius: 8px;
+  align-items: flex-end;
 }
 
 .chat-input {
   flex: 1;
-  margin-right: 10px;
 }
 
 .send-button {
-  align-self: flex-end;
+  height: fit-content;
 }
 
 /* Markdown 样式 */

@@ -1,86 +1,109 @@
 <template>
-  <div class="sessions-container">
-    <van-nav-bar title="会话管理" fixed />
+  <div class="sessions-page">
+    <el-page-header title="会话管理" @back="goToAIChat">
+      <template #content>
+        <span class="page-title">会话管理</span>
+      </template>
+      <template #extra>
+        <el-button type="primary" @click="createNewSession">
+          <el-icon><Plus /></el-icon>
+          新会话
+        </el-button>
+      </template>
+    </el-page-header>
     
     <div class="sessions-content">
-      <div class="sessions-header">
-        <div class="header-title">
-          <van-icon name="chat-o" size="24" color="#1989fa" />
-          <h2>历史会话</h2>
-        </div>
-        <van-button type="primary" @click="createNewSession">
-          新会话
-        </van-button>
-      </div>
-      
       <div v-if="sessionStore.isLoading" class="loading">
-        <van-loading type="spinner" color="#1989fa" />
+        <el-loading-spinner />
         <p>加载中...</p>
       </div>
       
-      <div v-else-if="sessionStore.sessions.length === 0" class="empty-sessions">
-        <van-icon name="chat-o" size="64" color="#ccc" />
-        <p>暂无会话记录</p>
-        <van-button type="primary" @click="createNewSession">
+      <el-empty
+        v-else-if="sessionStore.sessions.length === 0"
+        description="暂无会话记录"
+      >
+        <el-button type="primary" @click="createNewSession">
           创建新会话
-        </van-button>
-      </div>
+        </el-button>
+      </el-empty>
       
       <div v-else class="sessions-list">
-        <van-cell-group>
-          <van-cell
-            v-for="session in sessionStore.sessions"
-            :key="session.session_id"
-            :title="session.title || '新会话'"
-            :value="formatSessionTime(session.created_at)"
-            is-link
-            @click="selectSession(session)"
-            :class="{ active: sessionStore.currentSession?.session_id === session.session_id }"
+        <el-card shadow="hover">
+          <el-table
+            :data="sessionStore.sessions"
+            style="width: 100%"
+            :row-class-name="getRowClass"
+            @row-click="(row) => selectSession(row)"
           >
-            <template #right-icon>
-              <van-button
-                type="danger"
-                plain
-                size="small"
-                @click.stop="deleteSession(session.session_id)"
-              >
-                删除
-              </van-button>
-            </template>
-          </van-cell>
-        </van-cell-group>
+            <el-table-column label="会话标题" min-width="200">
+              <template #default="{ row }">
+                <div class="session-title">
+                  <el-icon color="#409EFF"><ChatDotRound /></el-icon>
+                  <span>{{ row.title || '新会话' }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            
+            <el-table-column label="创建时间" width="180">
+              <template #default="{ row }">
+                {{ formatSessionTime(row.created_at) }}
+              </template>
+            </el-table-column>
+            
+            <el-table-column label="操作" width="120" align="center">
+              <template #default="{ row }">
+                <el-button
+                  type="danger"
+                  size="small"
+                  plain
+                  @click.stop="deleteSession(row.session_id)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
       </div>
     </div>
     
     <!-- 新会话对话框 -->
-    <van-popup v-model:show="showNewSessionDialog" position="bottom">
-      <div class="new-session-dialog">
-        <h3>新会话</h3>
-        <van-field
-          v-model="newSessionQuery"
-          type="textarea"
-          rows="3"
-          placeholder="请输入您的问题..."
-          maxlength="200"
-        />
-        <div class="dialog-buttons">
-          <van-button @click="showNewSessionDialog = false">取消</van-button>
-          <van-button type="primary" @click="confirmNewSession" :disabled="!newSessionQuery.trim()">
-            开始对话
-          </van-button>
-        </div>
-      </div>
-    </van-popup>
-    
-    <tab-bar />
+    <el-dialog
+      v-model="showNewSessionDialog"
+      title="创建新会话"
+      width="500px"
+    >
+      <el-form>
+        <el-form-item label="请输入您的问题">
+          <el-input
+            v-model="newSessionQuery"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入您的问题..."
+            maxlength="500"
+            show-word-limit
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showNewSessionDialog = false">取消</el-button>
+        <el-button 
+          type="primary" 
+          @click="confirmNewSession"
+          :disabled="!newSessionQuery.trim()"
+        >
+          开始对话
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { showToast, Toast } from 'vant';
-import TabBar from '../components/TabBar.vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { Plus, ChatDotRound, Delete } from '@element-plus/icons-vue';
 import { useSessionStore } from '../store/session';
 import { useUserStore } from '../store/user';
 
@@ -99,11 +122,24 @@ watch(() => route.path, async (newPath) => {
   }
 });
 
+// 返回AI对话页面
+const goToAIChat = () => {
+  router.push('/ai-chat');
+};
+
+// 获取行样式
+const getRowClass = ({ row }) => {
+  if (sessionStore.currentSession?.session_id === row.session_id) {
+    return 'active-row';
+  }
+  return '';
+};
+
 // 加载会话列表
 const loadSessions = async () => {
   // 检查是否登录
   if (!userStore.getLoginStatus) {
-    showToast('请先登录');
+    ElMessage.warning('请先登录');
     router.push('/login');
     return;
   }
@@ -112,26 +148,23 @@ const loadSessions = async () => {
   if (!userStore.userInfo) {
     const result = await userStore.getUserInfoDetail();
     if (!result.success) {
-      showToast('获取用户信息失败');
+      ElMessage.error('获取用户信息失败');
       return;
     }
   }
   
   if (userStore.userInfo) {
-
-    
     // 尝试获取用户ID，支持不同的字段名
     let userId = userStore.userInfo.uuid || userStore.userInfo.id || userStore.userInfo.user_id;
     
     if (userId) {
       await sessionStore.getUserSessions(userId);
     } else {
-      // 显示详细的错误信息
-      showToast('获取用户ID失败，请检查用户信息结构');
+      ElMessage.error('获取用户ID失败，请检查用户信息结构');
       console.error('用户信息中没有找到ID字段:', userStore.userInfo);
     }
   } else {
-    showToast('获取用户信息失败');
+    ElMessage.error('获取用户信息失败');
   }
 };
 
@@ -174,13 +207,25 @@ const selectSession = (session) => {
 
 // 删除会话
 const deleteSession = async (sessionId) => {
-
-  
-  const result = await sessionStore.deleteSession(sessionId);
-  if (result.success) {
-    showToast('会话删除成功');
-  } else {
-    showToast(result.message || '删除失败');
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这个会话吗？删除后无法恢复',
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    );
+    
+    const result = await sessionStore.deleteSession(sessionId);
+    if (result.success) {
+      ElMessage.success('会话删除成功');
+    } else {
+      ElMessage.error(result.message || '删除失败');
+    }
+  } catch {
+    // 用户取消删除
   }
 };
 
@@ -193,72 +238,48 @@ const createNewSession = () => {
 const confirmNewSession = async () => {
   if (!newSessionQuery.value.trim()) return;
   
-  // 显示加载状态，保存返回的toast实例
-  const toastInstance = showToast({
-    type: 'loading',
+  const loadingInstance = ElMessage({
     message: '创建会话中...',
-    forbidClick: true,
+    type: 'info',
     duration: 0
   });
   
   try {
     const result = await sessionStore.createSession(newSessionQuery.value);
     if (result.success && result.data?.session_id) {
-      showToast('会话创建成功');
+      ElMessage.success('会话创建成功');
       showNewSessionDialog.value = false;
       newSessionQuery.value = '';
-      // 跳转到带会话ID的聊天页面
       router.push(`/aichat/${result.data.session_id}`);
     } else {
-      showToast(result.message || '创建会话失败');
+      ElMessage.error(result.message || '创建会话失败');
     }
   } catch (error) {
-    showToast('创建会话失败');
+    ElMessage.error('创建会话失败');
     console.error('创建会话失败:', error);
-  } finally {
-    // 使用toast实例的关闭方法
-    if (toastInstance && toastInstance.close) {
-      toastInstance.close();
-    }
   }
 };
 </script>
 
 <style scoped>
-.sessions-container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  padding-top: 46px;
-  padding-bottom: 50px;
+.sessions-page {
+  height: 100%;
+  padding: 20px;
   box-sizing: border-box;
-  background-color: #f7f8fa;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+:deep(.el-page-header) {
+  margin-bottom: 20px;
 }
 
 .sessions-content {
   flex: 1;
-  padding: 16px;
-  overflow-y: auto;
-}
-
-.sessions-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sessions-header h2 {
-  font-size: 18px;
-  font-weight: bold;
-  color: #333;
-  margin: 0;
 }
 
 .loading {
@@ -267,56 +288,32 @@ const confirmNewSession = async () => {
   align-items: center;
   justify-content: center;
   height: 300px;
+  color: #909399;
 }
 
 .loading p {
   margin-top: 16px;
-  color: #666;
-}
-
-.empty-sessions {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 300px;
-}
-
-.empty-sessions p {
-  margin: 16px 0;
-  color: #999;
 }
 
 .sessions-list {
   margin-top: 10px;
 }
 
-.active {
-  background-color: #f0f9ff !important;
-}
-
-.new-session-dialog {
-  background-color: #fff;
-  border-radius: 16px 16px 0 0;
-  padding: 20px;
-}
-
-.new-session-dialog h3 {
-  font-size: 18px;
-  font-weight: bold;
-  color: #333;
-  margin: 0 0 20px 0;
-  text-align: center;
-}
-
-.dialog-buttons {
+.session-title {
   display: flex;
-  justify-content: space-between;
-  margin-top: 20px;
+  align-items: center;
+  gap: 8px;
 }
 
-.dialog-buttons van-button {
-  flex: 1;
-  margin: 0 5px;
+:deep(.active-row) {
+  background-color: #ecf5ff !important;
+}
+
+:deep(.el-table__row) {
+  cursor: pointer;
+}
+
+:deep(.el-table__row:hover) {
+  background-color: #f5f7fa;
 }
 </style>
