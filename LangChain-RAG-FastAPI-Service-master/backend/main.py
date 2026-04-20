@@ -20,7 +20,7 @@ from app.rag.reorder_service import check_and_download_reranker_model
 #commit  zmg1111
 # 加载环境变量
 load_dotenv()
-
+#test
 app = FastAPI()
 
 # 集成限流中间件
