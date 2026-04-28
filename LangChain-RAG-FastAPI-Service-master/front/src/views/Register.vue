@@ -3,7 +3,7 @@
     <div class="register-container">
       <div class="register-box">
         <div class="register-logo">
-          <el-avatar :size="80" src="https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg" />
+          <el-avatar :size="80" src="https://avatars.githubusercontent.com/u/14048127?s=200&v=4" />
           <h2>用户注册</h2>
           <p class="subtitle">AI智能助手系统</p>
         </div>

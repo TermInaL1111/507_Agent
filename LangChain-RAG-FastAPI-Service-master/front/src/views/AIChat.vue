@@ -27,12 +27,116 @@
             />
           </div>
           <div class="message-content">
-            <div v-if="message.role === 'assistant' && message.content === ''" class="typing-indicator">
+            <div v-if="message.role === 'assistant' && message.content === '' && !message.resultCard" class="typing-indicator">
               <span></span>
               <span></span>
               <span></span>
             </div>
             <div v-else v-html="formatMessage(message.content)"></div>
+
+            <div v-if="message.role === 'assistant' && message.resultCard" class="result-card" :class="`result-card--${message.resultCard.type}`">
+              <div class="result-card-header">
+                <span class="result-card-title">{{ message.resultCard.title || '结果卡片' }}</span>
+                <el-tag size="small" effect="light" :type="getResultCardTagType(message.resultCard.type)">
+                  {{ getResultCardTypeLabel(message.resultCard.type) }}
+                </el-tag>
+              </div>
+
+              <p v-if="message.resultCard.summary" class="result-card-summary">{{ message.resultCard.summary }}</p>
+
+              <ul v-if="message.resultCard.type === 'answer' && message.resultCard.highlights?.length" class="card-list">
+                <li v-for="(point, pointIndex) in message.resultCard.highlights" :key="`a-${index}-${pointIndex}`">{{ point }}</li>
+              </ul>
+
+              <div v-if="message.resultCard.type === 'recommendation'" class="card-section">
+                <div v-if="message.resultCard.strategy" class="card-meta">推荐策略：{{ message.resultCard.strategy }}</div>
+                <ul v-if="message.resultCard.recommendations?.length" class="card-recommend-list">
+                  <li
+                    v-for="(item, itemIndex) in message.resultCard.recommendations"
+                    :key="`r-${index}-${itemIndex}`"
+                    class="card-recommend-item"
+                  >
+                    <div class="card-recommend-head">
+                      <span class="card-recommend-title">{{ item.title || `推荐项${itemIndex + 1}` }}</span>
+                      <el-tag v-if="item.score" size="small" type="success" effect="plain">{{ item.score }}</el-tag>
+                    </div>
+                    <p v-if="item.reason" class="card-recommend-reason">{{ item.reason }}</p>
+                    <div v-if="item.tags?.length" class="card-tags">
+                      <el-tag v-for="(tag, tagIndex) in item.tags" :key="`rt-${index}-${itemIndex}-${tagIndex}`" size="small" effect="plain">
+                        {{ tag }}
+                      </el-tag>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+
+              <div v-if="message.resultCard.type === 'navigation'" class="card-section">
+                <div class="card-meta" v-if="message.resultCard.start || message.resultCard.end">
+                  {{ message.resultCard.start || '起点未提供' }} → {{ message.resultCard.end || '终点未提供' }}
+                </div>
+                <ul v-if="message.resultCard.routes?.length" class="card-route-list">
+                  <li v-for="(routeItem, routeIndex) in message.resultCard.routes" :key="`n-${index}-${routeIndex}`" class="card-route-item">
+                    <div class="card-route-head">
+                      <span>{{ routeItem.title || `路线${routeIndex + 1}` }}</span>
+                      <span class="card-route-meta">
+                        {{ routeItem.duration || '时长未知' }}
+                        <template v-if="routeItem.distance">· {{ routeItem.distance }}</template>
+                      </span>
+                    </div>
+                    <ol v-if="routeItem.steps?.length" class="card-route-steps">
+                      <li v-for="(stepText, stepIndex) in routeItem.steps" :key="`ns-${index}-${routeIndex}-${stepIndex}`">{{ stepText }}</li>
+                    </ol>
+                  </li>
+                </ul>
+              </div>
+
+              <div v-if="message.resultCard.type === 'check'" class="card-section">
+                <div class="card-meta">
+                  校验结果：
+                  <el-tag size="small" :type="getCheckStatusTagType(message.resultCard.status)">
+                    {{ message.resultCard.status || 'unknown' }}
+                  </el-tag>
+                </div>
+                <ul v-if="message.resultCard.checks?.length" class="card-check-list">
+                  <li v-for="(checkItem, checkIndex) in message.resultCard.checks" :key="`c-${index}-${checkIndex}`" class="card-check-item">
+                    <div class="card-check-head">
+                      <span>{{ checkItem.name || `检查项${checkIndex + 1}` }}</span>
+                      <el-tag size="small" :type="getCheckStatusTagType(checkItem.status)">
+                        {{ checkItem.status || 'unknown' }}
+                      </el-tag>
+                    </div>
+                    <p v-if="checkItem.detail" class="card-check-detail">{{ checkItem.detail }}</p>
+                    <p v-if="checkItem.suggestion" class="card-check-suggestion">建议：{{ checkItem.suggestion }}</p>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div v-if="message.role === 'assistant' && message.sources?.length" class="message-sources">
+              <div class="sources-title">引用来源</div>
+              <ul class="sources-list">
+                <li
+                  v-for="(source, sourceIndex) in message.sources"
+                  :key="`${index}-${sourceIndex}`"
+                  class="source-item"
+                >
+                  <div class="source-head">
+                    <span class="source-index">[{{ sourceIndex + 1 }}]</span>
+                    <span class="source-title">{{ source.title || `来源${sourceIndex + 1}` }}</span>
+                  </div>
+                  <p v-if="source.content" class="source-content">{{ source.content }}</p>
+                  <a
+                    v-if="source.url"
+                    :href="source.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="source-link"
+                  >
+                    {{ source.url }}
+                  </a>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -87,7 +191,7 @@ const getCsrfToken = () => {
 
 // 聊天消息
 const messages = ref([
-  { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？' }
+  { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', sources: [], resultCard: null }
 ]);
 const userInput = ref('');
 const messagesContainer = ref(null);
@@ -128,6 +232,270 @@ const formatMessage = (content) => {
   }
 };
 
+const normalizeCardType = (typeValue) => {
+  const rawType = String(typeValue || '').toLowerCase();
+
+  const mapping = {
+    answer: 'answer',
+    qa: 'answer',
+    question_answer: 'answer',
+    recommendation: 'recommendation',
+    recommend: 'recommendation',
+    suggestion: 'recommendation',
+    navigation: 'navigation',
+    route: 'navigation',
+    map: 'navigation',
+    check: 'check',
+    validation: 'check',
+    verify: 'check',
+    audit: 'check'
+  };
+
+  return mapping[rawType] || '';
+};
+
+const toArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (value === null || value === undefined || value === '') return [];
+  return [value];
+};
+
+const parseObjectFromJSONString = (value) => {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text.startsWith('{') || !text.endsWith('}')) return null;
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const getResultCardTypeLabel = (type) => {
+  const labelMap = {
+    answer: '问答型',
+    recommendation: '推荐型',
+    navigation: '导航型',
+    check: '检查型'
+  };
+
+  return labelMap[type] || '结果型';
+};
+
+const getResultCardTagType = (type) => {
+  const tagMap = {
+    answer: 'primary',
+    recommendation: 'success',
+    navigation: 'warning',
+    check: 'danger'
+  };
+
+  return tagMap[type] || 'info';
+};
+
+const getCheckStatusTagType = (status) => {
+  const normalized = String(status || '').toLowerCase();
+  if (['pass', 'ok', 'success'].includes(normalized)) return 'success';
+  if (['warn', 'warning', 'pending'].includes(normalized)) return 'warning';
+  if (['fail', 'error', 'blocked'].includes(normalized)) return 'danger';
+  return 'info';
+};
+
+const normalizeResultCard = (rawCard) => {
+  if (!rawCard || typeof rawCard !== 'object') return null;
+
+  let type = normalizeCardType(rawCard.type || rawCard.card_type || rawCard.kind);
+
+  if (!type) {
+    if (rawCard.recommendations || rawCard.candidates || rawCard.strategy) {
+      type = 'recommendation';
+    } else if (rawCard.routes || rawCard.start || rawCard.end || rawCard.from || rawCard.to) {
+      type = 'navigation';
+    } else if (rawCard.checks || rawCard.verdict || rawCard.issues || rawCard.compliance) {
+      type = 'check';
+    } else if (rawCard.summary || rawCard.highlights || rawCard.key_points) {
+      type = 'answer';
+    }
+  }
+
+  if (!type) return null;
+
+  const baseCard = {
+    type,
+    title: rawCard.title || rawCard.name || getResultCardTypeLabel(type),
+    summary: rawCard.summary || rawCard.description || ''
+  };
+
+  if (type === 'answer') {
+    return {
+      ...baseCard,
+      highlights: toArray(rawCard.highlights || rawCard.key_points || rawCard.points)
+    };
+  }
+
+  if (type === 'recommendation') {
+    const recommendationItems = toArray(rawCard.recommendations || rawCard.items || rawCard.candidates).map((item, index) => {
+      if (typeof item === 'string') {
+        return {
+          title: `推荐项${index + 1}`,
+          reason: item,
+          score: '',
+          tags: []
+        };
+      }
+
+      return {
+        title: item?.title || item?.name || `推荐项${index + 1}`,
+        reason: item?.reason || item?.description || '',
+        score: item?.score ? String(item.score) : '',
+        tags: toArray(item?.tags)
+      };
+    });
+
+    return {
+      ...baseCard,
+      strategy: rawCard.strategy || rawCard.goal || '',
+      recommendations: recommendationItems
+    };
+  }
+
+  if (type === 'navigation') {
+    const routeItems = toArray(rawCard.routes || rawCard.items).map((item, index) => {
+      if (typeof item === 'string') {
+        return {
+          title: `路线${index + 1}`,
+          duration: '',
+          distance: '',
+          steps: [item]
+        };
+      }
+
+      return {
+        title: item?.title || item?.name || `路线${index + 1}`,
+        duration: item?.duration || item?.eta || '',
+        distance: item?.distance || '',
+        steps: toArray(item?.steps || item?.instructions)
+      };
+    });
+
+    return {
+      ...baseCard,
+      start: rawCard.start || rawCard.from || '',
+      end: rawCard.end || rawCard.to || rawCard.destination || '',
+      routes: routeItems
+    };
+  }
+
+  if (type === 'check') {
+    const checkItems = toArray(rawCard.checks || rawCard.items || rawCard.issues).map((item, index) => {
+      if (typeof item === 'string') {
+        return {
+          name: `检查项${index + 1}`,
+          status: '',
+          detail: item,
+          suggestion: ''
+        };
+      }
+
+      return {
+        name: item?.name || item?.title || `检查项${index + 1}`,
+        status: item?.status || item?.result || '',
+        detail: item?.detail || item?.description || '',
+        suggestion: item?.suggestion || item?.advice || ''
+      };
+    });
+
+    return {
+      ...baseCard,
+      status: rawCard.status || rawCard.verdict || rawCard.compliance || '',
+      checks: checkItems
+    };
+  }
+
+  return null;
+};
+
+const extractResultCard = (payload) => {
+  if (!payload || typeof payload !== 'object') return null;
+
+  const candidates = [
+    payload.result_card,
+    payload.resultCard,
+    payload.card,
+    payload.card_data,
+    payload.result,
+    payload.data
+  ];
+
+  if (payload.type || payload.card_type || payload.kind) {
+    candidates.unshift(payload);
+  }
+
+  for (const candidate of candidates) {
+    const normalized = normalizeResultCard(candidate);
+    if (normalized) return normalized;
+  }
+
+  return null;
+};
+
+const updateAssistantResultCard = (payload) => {
+  const currentMessage = messages.value[messages.value.length - 1];
+  if (!currentMessage || currentMessage.role !== 'assistant') return;
+
+  const parsedCard = extractResultCard(payload);
+  if (parsedCard) {
+    currentMessage.resultCard = parsedCard;
+  }
+};
+
+const normalizeSources = (sourcePayload) => {
+  if (!sourcePayload) return [];
+
+  if (Array.isArray(sourcePayload)) {
+    return sourcePayload
+      .map((item, index) => {
+        if (typeof item === 'string') {
+          return {
+            title: `来源${index + 1}`,
+            content: item,
+            url: ''
+          };
+        }
+
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+
+        return {
+          title: item.title || item.name || `来源${index + 1}`,
+          content: item.content || item.snippet || item.text || '',
+          url: item.url || item.link || ''
+        };
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof sourcePayload === 'string') {
+    return [{ title: '来源', content: sourcePayload, url: '' }];
+  }
+
+  return [];
+};
+
+const updateAssistantSources = (payload) => {
+  const currentMessage = messages.value[messages.value.length - 1];
+  if (!currentMessage || currentMessage.role !== 'assistant') return;
+
+  const rawSources = payload?.sources || payload?.references || payload?.docs;
+  const parsedSources = normalizeSources(rawSources);
+  if (parsedSources.length > 0) {
+    currentMessage.sources = parsedSources;
+  }
+};
+
 // 处理回车键发送
 const handleEnter = (e) => {
   if (!e.shiftKey) {
@@ -151,7 +519,7 @@ const sendMessage = async () => {
   userInput.value = '';
   
   // 添加AI消息占位
-  messages.value.push({ role: 'assistant', content: '' });
+  messages.value.push({ role: 'assistant', content: '', sources: [], resultCard: null });
   
   // 滚动到底部
   await nextTick();
@@ -225,7 +593,26 @@ const fetchAIResponse = async (userMessage) => {
             case 'step':
               break;
             case 'response':
-              const content = json.content || '';
+              let content = '';
+
+              if (typeof json.content === 'string') {
+                content = json.content;
+                const parsedObjectPayload = parseObjectFromJSONString(json.content);
+                if (parsedObjectPayload) {
+                  const extractedText = parsedObjectPayload.answer || parsedObjectPayload.response || parsedObjectPayload.content || '';
+                  content = extractedText;
+                  updateAssistantSources(parsedObjectPayload);
+                  updateAssistantResultCard(parsedObjectPayload);
+                }
+              } else if (json.content && typeof json.content === 'object') {
+                content = json.content.answer || json.content.response || json.content.content || '';
+                updateAssistantSources(json.content);
+                updateAssistantResultCard(json.content);
+              }
+
+              updateAssistantSources(json);
+              updateAssistantResultCard(json);
+
               if (content) {
                 aiResponse += content;
                 
@@ -247,6 +634,9 @@ const fetchAIResponse = async (userMessage) => {
               }
               break;
             case 'done':
+              updateAssistantSources(json);
+              updateAssistantResultCard(json);
+
               // 保存会话ID并在所有数据接收完成后跳转
               if (json.session_id && typeof json.session_id === 'string' && json.session_id.trim()) {
                 sessionId.value = json.session_id;
@@ -268,7 +658,8 @@ const fetchAIResponse = async (userMessage) => {
   }
   
   // 如果没有收到任何内容
-  if (!aiResponse) {
+  const currentMessage = messages.value[messages.value.length - 1];
+  if (!aiResponse && !currentMessage?.resultCard) {
     messages.value[messages.value.length - 1].content = '抱歉，我无法生成回复。请检查API设置或稍后再试。';
   }
   } catch (error) {
@@ -346,8 +737,20 @@ const loadSessionHistory = (session) => {
     messages.value = [];
     // 加载历史消息
     session.history.forEach(([userMsg, aiMsg]) => {
+      const parsedHistoryPayload = parseObjectFromJSONString(aiMsg);
+      const historyCard = parsedHistoryPayload ? extractResultCard(parsedHistoryPayload) : null;
+      const historySources = parsedHistoryPayload ? normalizeSources(parsedHistoryPayload.sources || parsedHistoryPayload.references || parsedHistoryPayload.docs) : [];
+      const historyContent = parsedHistoryPayload
+        ? (parsedHistoryPayload.answer || parsedHistoryPayload.response || parsedHistoryPayload.content || '')
+        : aiMsg;
+
       messages.value.push({ role: 'user', content: userMsg });
-      messages.value.push({ role: 'assistant', content: aiMsg });
+      messages.value.push({
+        role: 'assistant',
+        content: historyContent,
+        sources: historySources,
+        resultCard: historyCard
+      });
     });
     // 设置会话ID
     sessionId.value = session.session_id;
@@ -427,6 +830,194 @@ const loadSessionHistory = (session) => {
   background-color: #f5f7fa;
   color: #303133;
   border: 1px solid #e4e7ed;
+}
+
+.result-card {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #dcdfe6;
+  background-color: #fff;
+}
+
+.result-card--answer {
+  border-left: 4px solid #409eff;
+}
+
+.result-card--recommendation {
+  border-left: 4px solid #67c23a;
+}
+
+.result-card--navigation {
+  border-left: 4px solid #e6a23c;
+}
+
+.result-card--check {
+  border-left: 4px solid #f56c6c;
+}
+
+.result-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.result-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.result-card-summary {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #606266;
+}
+
+.card-section {
+  margin-top: 8px;
+}
+
+.card-meta {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 6px;
+}
+
+.card-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.card-list li {
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.card-recommend-list,
+.card-route-list,
+.card-check-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card-recommend-item,
+.card-route-item,
+.card-check-item {
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.card-recommend-head,
+.card-route-head,
+.card-check-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-recommend-title {
+  font-weight: 500;
+  color: #303133;
+}
+
+.card-recommend-reason,
+.card-check-detail,
+.card-check-suggestion {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #606266;
+}
+
+.card-tags {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.card-route-meta {
+  font-size: 12px;
+  color: #909399;
+}
+
+.card-route-steps {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.card-route-steps li {
+  font-size: 12px;
+  color: #606266;
+  margin-bottom: 4px;
+}
+
+.message-sources {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #dcdfe6;
+}
+
+.sources-title {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+
+.sources-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.source-item {
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.source-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.source-index {
+  color: #409eff;
+  font-weight: 600;
+}
+
+.source-title {
+  color: #303133;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.source-content {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.5;
+}
+
+.source-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #409eff;
+  word-break: break-all;
 }
 
 .input-container {

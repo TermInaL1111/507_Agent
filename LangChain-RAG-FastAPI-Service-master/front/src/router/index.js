@@ -33,6 +33,60 @@ const routes = [
     }
   },
   {
+    path: '/schedule',
+    name: 'Schedule',
+    component: () => import('../views/Schedule.vue'),
+    meta: {
+      title: '课表服务',
+      keepAlive: false
+    }
+  },
+  {
+    path: '/course-plan',
+    name: 'CoursePlan',
+    component: () => import('../views/CoursePlan.vue'),
+    meta: {
+      title: '课程规划',
+      keepAlive: false
+    }
+  },
+  {
+    path: '/course-recommend',
+    name: 'CourseRecommend',
+    component: () => import('../views/CourseRecommend.vue'),
+    meta: {
+      title: '选课建议',
+      keepAlive: false
+    }
+  },
+  {
+    path: '/campus-map',
+    name: 'CampusMap',
+    component: () => import('../views/CampusMap.vue'),
+    meta: {
+      title: '校园导航',
+      keepAlive: false
+    }
+  },
+  {
+    path: '/document-assistant',
+    name: 'DocumentAssistant',
+    component: () => import('../views/DocumentAssistant.vue'),
+    meta: {
+      title: '文书辅助',
+      keepAlive: false
+    }
+  },
+  {
+    path: '/knowledge-manage',
+    name: 'KnowledgeManage',
+    component: () => import('../views/KnowledgeManage.vue'),
+    meta: {
+      title: '知识库管理',
+      keepAlive: false
+    }
+  },
+  {
     path: '/aichat/:sessionId',
     name: 'AIChatWithSession',
     component: () => import('../views/AIChat.vue'),

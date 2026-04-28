@@ -40,6 +40,37 @@ export const apiConfig = {
     cleanVectors: '/api/vector/clean',
     
     // 文档重排序
-    reorderDocuments: '/api/reorder'
+    reorderDocuments: '/api/reorder',
+
+    // 待新增：教师信息
+    getTeachers: '/api/teachers',
+
+    // 待新增：课表服务
+    getTodaySchedule: '/api/schedule/today',
+    getWeeklySchedule: '/api/schedule/week',
+    getScheduleConflicts: '/api/schedule/conflicts',
+
+    // 待新增：课程规划
+    getPlanOverview: '/api/plan/overview',
+    recommendPlan: '/api/plan/recommend',
+
+    // 待新增：选课建议
+    recommendCourseSelection: '/api/course/select/recommend',
+    checkCoursePrerequisite: '/api/course/select/check-prerequisite',
+
+    // 待新增：校园导航
+    getCampusLocations: '/api/campus/locations',
+    getCampusRoute: '/api/campus/route',
+
+    // 待新增：帖子辅助
+    summarizePosts: '/api/posts/summarize',
+    classifyPosts: '/api/posts/classify',
+    factCheckPosts: '/api/posts/fact-check',
+    moderatePosts: '/api/posts/moderation',
+
+    // 待新增：文书辅助
+    generateDocument: '/api/docs/generate',
+    checkDocument: '/api/docs/check',
+    optimizeDocument: '/api/docs/optimize'
   }
 }

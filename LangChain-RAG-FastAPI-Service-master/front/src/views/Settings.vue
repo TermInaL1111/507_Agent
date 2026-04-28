@@ -1,160 +1,137 @@
 <template>
-  <div class="settings-container">
-    <van-nav-bar
-      :title="$t('settings.title')"
-      left-arrow
-      @click-left="onClickLeft"
-    />
-    
-    <div class="settings-list">
-      <van-cell-group inset :title="$t('settings.personalization')">
-        <van-cell :title="$t('settings.themeCustomization')" is-link @click="showThemePopup = true" />
-        <van-cell :title="$t('settings.languageSettings')" is-link @click="showLanguagePopup = true" />
-      </van-cell-group>
-      
-      <van-cell-group inset :title="$t('settings.account')">
-        <van-cell :title="$t('settings.privacySettings')" is-link />
-        <van-cell :title="$t('settings.notificationSettings')" is-link />
-        <van-cell :title="$t('settings.aboutUs')" is-link />
-      </van-cell-group>
-    </div>
-    
-    <!-- 主题选择弹出层 -->
-    <van-popup
-      v-model:show="showThemePopup"
-      position="bottom"
-      round
-      :style="{ height: '40%' }"
-    >
-      <div class="popup-title">{{ $t('settings.selectTheme') }}</div>
-      <div class="theme-list">
-        <div 
-          v-for="theme in themeList" 
-          :key="theme.id" 
-          class="theme-item"
-          :class="{ active: currentTheme === theme.id }"
-          @click="changeTheme(theme.id)"
-        >
-          <div class="theme-color" :style="{ backgroundColor: theme.primaryColor }"></div>
-          <div class="theme-name">{{ theme.name }}</div>
+  <div class="settings-page page-container">
+    <el-card class="settings-card" shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span>{{ $t('settings.title') }}</span>
+        </div>
+      </template>
+
+      <!-- 个性化设置 -->
+      <el-divider content-position="left">{{ $t('settings.personalization') }}</el-divider>
+      <div class="section">
+        <div class="section-title">{{ $t('settings.themeCustomization') }}</div>
+        <div class="theme-list">
+          <div
+            v-for="theme in themeList"
+            :key="theme.id"
+            class="theme-item"
+            :class="{ active: currentTheme === theme.id }"
+            @click="changeTheme(theme.id)"
+          >
+            <div class="theme-color" :style="{ backgroundColor: theme.primaryColor }"></div>
+            <div class="theme-name">{{ theme.name }}</div>
+          </div>
         </div>
       </div>
-    </van-popup>
-    
-    <!-- 语言选择弹出层 -->
-    <van-popup
-      v-model:show="showLanguagePopup"
-      position="bottom"
-      round
-      :style="{ height: '40%' }"
-    >
-      <div class="popup-title">{{ $t('settings.selectLanguage') }}</div>
-      <van-radio-group v-model="currentLanguage">
-        <van-cell-group inset>
-          <van-cell 
-            v-for="lang in languageOptions" 
-            :key="lang.value" 
-            :title="lang.label" 
-            clickable 
-            @click="currentLanguage = lang.value"
-            :class="{ 'language-active': currentLanguage === lang.value }"
+
+      <!-- 语言设置 -->
+      <el-divider content-position="left">{{ $t('settings.languageSettings') }}</el-divider>
+      <div class="section">
+        <div class="section-title">{{ $t('settings.selectLanguage') }}</div>
+        <el-radio-group v-model="currentLanguage" class="language-group">
+          <el-radio-button
+            v-for="lang in languageOptions"
+            :key="lang.value"
+            :label="lang.value"
           >
-            <template #right-icon>
-              <van-radio :name="lang.value" />
-            </template>
-          </van-cell>
-        </van-cell-group>
-      </van-radio-group>
-      <div class="popup-footer">
-        <van-button type="primary" block @click="changeLanguage">{{ $t('common.confirm') }}</van-button>
+            {{ lang.label }}
+          </el-radio-button>
+        </el-radio-group>
+        <el-button type="primary" class="language-apply" @click="changeLanguage">
+          {{ $t('common.confirm') }}
+        </el-button>
       </div>
-    </van-popup>
+    </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
-import { useRouter } from 'vue-router';
-import { showToast } from 'vant';
-import { useThemeStore } from '../store/theme';
-import { useI18n } from 'vue-i18n';
-import { useLanguageStore } from '../store/language';
+import { ref, computed } from 'vue'
+import { ElMessage } from 'element-plus'
+import { useThemeStore } from '../store/theme'
+import { useI18n } from 'vue-i18n'
+import { useLanguageStore } from '../store/language'
 
-const router = useRouter();
-const themeStore = useThemeStore();
-const languageStore = useLanguageStore();
-const { t, locale } = useI18n();
-
-// 返回上一页
-const onClickLeft = () => {
-  router.back();
-};
+const themeStore = useThemeStore()
+const languageStore = useLanguageStore()
+const { t, locale } = useI18n()
 
 // 主题相关
-const showThemePopup = ref(false);
-const themeList = computed(() => themeStore.getAllThemes);
-const currentTheme = computed(() => themeStore.getCurrentTheme);
+const themeList = computed(() => themeStore.getAllThemes)
+const currentTheme = computed(() => themeStore.getCurrentTheme)
 
-// 切换主题
 const changeTheme = (themeId) => {
-  themeStore.setTheme(themeId);
-  showToast(t('settings.themeChanged'));
-  showThemePopup.value = false;
-};
+  themeStore.setTheme(themeId)
+  ElMessage.success(t('settings.themeChanged'))
+}
 
 // 语言相关
-const showLanguagePopup = ref(false);
-const currentLanguage = ref(languageStore.getCurrentLanguage);
+const currentLanguage = ref(languageStore.getCurrentLanguage)
 const languageOptions = [
   { label: '简体中文', value: 'zh-CN' },
   { label: 'English', value: 'en-US' }
-];
+]
 
-// 切换语言
 const changeLanguage = () => {
-  languageStore.setLanguage(currentLanguage.value);
-  locale.value = currentLanguage.value;
-  showLanguagePopup.value = false;
-  showToast(t('settings.languageChanged'));
+  languageStore.setLanguage(currentLanguage.value)
+  locale.value = currentLanguage.value
+  ElMessage.success(t('settings.languageChanged'))
   // 强制刷新页面以应用语言更改
-  window.location.reload();
-};
+  window.location.reload()
+}
 </script>
 
 <style scoped>
-.settings-container {
-  min-height: 100vh;
-  background-color: var(--background-color);
-  color: var(--text-color);
-  padding-top: 46px;
-  padding-bottom: 20px;
+.settings-page {
+  height: 100%;
 }
 
-.settings-list {
-  margin-top: 20px;
+.settings-card {
+  max-width: 900px;
+  margin: 0 auto;
 }
 
-.popup-title {
-  text-align: center;
-  padding: 16px;
-  font-size: 16px;
-  font-weight: bold;
-  border-bottom: 1px solid #eee;
+.card-header {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.section {
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 14px;
+  color: var(--text-color-regular);
+  margin-bottom: 12px;
 }
 
 .theme-list {
   display: flex;
   flex-wrap: wrap;
-  padding: 16px;
+  gap: 16px;
 }
 
 .theme-item {
-  width: 25%;
+  width: 120px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color-light);
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 16px;
   cursor: pointer;
+  transition: all 0.2s;
+}
+
+.theme-item:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.theme-item.active {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.3);
 }
 
 .theme-color {
@@ -162,26 +139,17 @@ const changeLanguage = () => {
   height: 40px;
   border-radius: 50%;
   margin-bottom: 8px;
-  border: 2px solid transparent;
-}
-
-.theme-item.active .theme-color {
-  border-color: #1989fa;
 }
 
 .theme-name {
-  font-size: 12px;
+  font-size: 13px;
 }
 
-.popup-footer {
-  padding: 16px;
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+.language-group {
+  margin-top: 8px;
 }
 
-.language-active {
-  background-color: #f5f5f5;
+.language-apply {
+  margin-top: 16px;
 }
 </style>

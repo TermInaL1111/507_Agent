@@ -15,7 +15,7 @@
         text-color="#bfcbd9"
         active-text-color="#409EFF"
       >
-        <el-menu-item index="/ai-chat">
+        <el-menu-item index="/aichat">
           <el-icon><ChatDotRound /></el-icon>
           <span>AI问答</span>
         </el-menu-item>
@@ -23,6 +23,36 @@
         <el-menu-item index="/sessions">
           <el-icon><ChatLineSquare /></el-icon>
           <span>会话管理</span>
+        </el-menu-item>
+
+        <el-menu-item index="/schedule">
+          <el-icon><Calendar /></el-icon>
+          <span>课表服务</span>
+        </el-menu-item>
+
+        <el-menu-item index="/course-plan">
+          <el-icon><Reading /></el-icon>
+          <span>课程规划</span>
+        </el-menu-item>
+
+        <el-menu-item index="/course-recommend">
+          <el-icon><Notebook /></el-icon>
+          <span>选课建议</span>
+        </el-menu-item>
+
+        <el-menu-item index="/campus-map">
+          <el-icon><Location /></el-icon>
+          <span>校园导航</span>
+        </el-menu-item>
+
+        <el-menu-item index="/document-assistant">
+          <el-icon><Document /></el-icon>
+          <span>文书辅助</span>
+        </el-menu-item>
+
+        <el-menu-item index="/knowledge-manage">
+          <el-icon><Collection /></el-icon>
+          <span>知识库管理</span>
         </el-menu-item>
         
         <el-menu-item index="/profile">
@@ -86,6 +116,10 @@ const showSidebar = computed(() => {
 
 // 当前激活的菜单
 const activeMenu = computed(() => {
+  if (route.path.startsWith('/aichat')) {
+    return '/aichat'
+  }
+
   return route.path
 })
 
@@ -155,6 +189,7 @@ html, body, #app {
 .sidebar-menu {
   flex: 1;
   border-right: none;
+  overflow-y: auto;
 }
 
 .sidebar-menu .el-menu-item {

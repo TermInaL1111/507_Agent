@@ -13,6 +13,14 @@
     </el-page-header>
     
     <div class="sessions-content">
+      <div class="session-toolbar">
+        <el-tag effect="plain" type="info">会话总数：{{ sessionStore.sessions.length }}</el-tag>
+        <el-button type="primary" link :loading="refreshing" @click="refreshSessions">
+          <el-icon><Refresh /></el-icon>
+          刷新列表
+        </el-button>
+      </div>
+
       <div v-if="sessionStore.isLoading" class="loading">
         <el-loading-spinner />
         <p>加载中...</p>
@@ -103,7 +111,7 @@
 import { ref, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus, ChatDotRound, Delete } from '@element-plus/icons-vue';
+import { Plus, ChatDotRound, Delete, Refresh } from '@element-plus/icons-vue';
 import { useSessionStore } from '../store/session';
 import { useUserStore } from '../store/user';
 
@@ -114,6 +122,7 @@ const userStore = useUserStore();
 
 const showNewSessionDialog = ref(false);
 const newSessionQuery = ref('');
+const refreshing = ref(false);
 
 // 监听路由变化，确保每次访问会话管理页面时自动刷新会话列表
 watch(() => route.path, async (newPath) => {
@@ -124,7 +133,7 @@ watch(() => route.path, async (newPath) => {
 
 // 返回AI对话页面
 const goToAIChat = () => {
-  router.push('/ai-chat');
+  router.push('/aichat');
 };
 
 // 获取行样式
@@ -155,16 +164,29 @@ const loadSessions = async () => {
   
   if (userStore.userInfo) {
     // 尝试获取用户ID，支持不同的字段名
-    let userId = userStore.userInfo.uuid || userStore.userInfo.id || userStore.userInfo.user_id;
+    const userId = userStore.userInfo.uuid || userStore.userInfo.id || userStore.userInfo.user_id;
     
     if (userId) {
-      await sessionStore.getUserSessions(userId);
+      const sessionResult = await sessionStore.getUserSessions(userId);
+      if (!sessionResult.success) {
+        ElMessage.error(sessionResult.message || '获取会话列表失败');
+      }
     } else {
       ElMessage.error('获取用户ID失败，请检查用户信息结构');
       console.error('用户信息中没有找到ID字段:', userStore.userInfo);
     }
   } else {
     ElMessage.error('获取用户信息失败');
+  }
+};
+
+const refreshSessions = async () => {
+  refreshing.value = true;
+  try {
+    await loadSessions();
+    ElMessage.success('会话列表已刷新');
+  } finally {
+    refreshing.value = false;
   }
 };
 
@@ -257,6 +279,8 @@ const confirmNewSession = async () => {
   } catch (error) {
     ElMessage.error('创建会话失败');
     console.error('创建会话失败:', error);
+  } finally {
+    loadingInstance.close();
   }
 };
 </script>
@@ -280,6 +304,13 @@ const confirmNewSession = async () => {
 
 .sessions-content {
   flex: 1;
+}
+
+.session-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
 
 .loading {

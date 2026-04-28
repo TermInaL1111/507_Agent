@@ -1,171 +1,177 @@
 <template>
-  <div class="my-container">
-    <van-nav-bar :title="$t('my.title')" />
-    <div class="user-info" @click="goToProfile" v-if="isLogin">
-      <div class="avatar">
-        <van-image
-          round
-          width="80"
-          height="80"
-          :src="userInfo && userInfo.avatar ? `http://localhost:8001${userInfo.avatar}` : 'https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg'"
-        />
+  <div class="my-page page-container">
+    <el-card class="my-card" shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span>{{ $t('my.title') }}</span>
+        </div>
+      </template>
+
+      <div class="user-section" v-if="isLogin">
+        <el-avatar :size="80" :src="avatarUrl" />
+        <div class="user-info">
+          <div class="username">{{ userInfo?.username }}</div>
+          <div class="desc">{{ userBio }}</div>
+        </div>
+        <el-button type="text" @click="goToProfile">
+          个人资料
+        </el-button>
       </div>
-      <div class="info">
-        <div class="username">{{ isLogin && userInfo ? userInfo.username : $t('my.notLoggedIn') }}</div>
-        <div class="desc" v-if="isLogin && userInfo">{{ userBio || $t('profile.bio') }}</div>
-      </div>
-      <van-icon name="arrow" class="arrow-icon" />
-    </div>
-    <div class="user-info" v-else>
-      <div class="avatar">
-        <van-image
-          round
-          width="80"
-          height="80"
-          src="https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg"
-        />
-      </div>
-      <div class="info">
-        <div class="username">{{ $t('my.notLoggedIn') }}</div>
-        <div class="desc">
-          <van-button type="primary" size="small" @click="goToLogin" style="margin-right: 10px">{{ $t('my.goToLogin') }}</van-button>
-          <van-button type="default" size="small" @click="goToRegister">{{ $t('my.goToRegister') }}</van-button>
+
+      <div class="user-section" v-else>
+        <el-avatar :size="80" src="https://avatars.githubusercontent.com/u/14048127?s=200&v=4" />
+        <div class="user-info">
+          <div class="username">{{ $t('my.notLoggedIn') }}</div>
+          <div class="desc">
+            <el-button type="primary" size="small" @click="goToLogin" style="margin-right: 8px">
+              {{ $t('my.goToLogin') }}
+            </el-button>
+            <el-button size="small" @click="goToRegister">
+              {{ $t('my.goToRegister') }}
+            </el-button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="menu-list">
-      <van-cell-group inset>
-        <van-cell :title="$t('my.notifications')" is-link />
-        <van-cell :title="$t('my.settings')" is-link @click="goToSettings" />
-        <van-cell v-if="isLogin" :title="$t('my.logout')" @click="handleLogout" />
-      </van-cell-group>
-    </div>
-    <tab-bar />
+      <el-divider />
+
+      <div class="menu-row">
+        <el-card class="menu-item" shadow="hover" @click="goToSettings">
+          <el-icon><Setting /></el-icon>
+          <span>{{ $t('my.settings') }}</span>
+        </el-card>
+        <el-card v-if="isLogin" class="menu-item danger" shadow="hover" @click="handleLogout">
+          <el-icon><SwitchButton /></el-icon>
+          <span>{{ $t('my.logout') }}</span>
+        </el-card>
+      </div>
+    </el-card>
   </div>
 </template>
 
 <script setup>
-import { onMounted } from 'vue';
-import { useUserStore } from '../store/user';
-import { useRouter } from 'vue-router';
-import { computed, ref } from 'vue';
-import { showDialog, showToast } from 'vant';
-import TabBar from '../components/TabBar.vue';
-import { useI18n } from 'vue-i18n';
+import { computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { ElMessageBox, ElMessage } from 'element-plus'
+import { Setting, SwitchButton } from '@element-plus/icons-vue'
+import { useUserStore } from '../store/user'
 
-const userStore = useUserStore();
-const router = useRouter();
-const { t } = useI18n();
+const userStore = useUserStore()
+const router = useRouter()
+const { t } = useI18n()
 
-// 从store获取用户信息和登录状态
-const userInfo = computed(() => userStore.userInfo);
-const isLogin = computed(() => userStore.getLoginStatus);
-const userBio = computed(() => userStore.getUserBio || t('profile.bio'));
+const userInfo = computed(() => userStore.userInfo)
+const isLogin = computed(() => userStore.getLoginStatus)
+const userBio = computed(() => userStore.getUserBio || t('profile.bio'))
 
-// 跳转到登录页
+const avatarUrl = computed(() => {
+  if (userInfo.value?.avatar) {
+    return `http://localhost:8001${userInfo.value.avatar}`
+  }
+  return 'https://avatars.githubusercontent.com/u/14048127?s=200&v=4'
+})
+
 const goToLogin = () => {
-  router.push('/login');
-};
+  router.push('/login')
+}
 
-// 跳转到注册页
 const goToRegister = () => {
-  router.push('/register');
-};
+  router.push('/register')
+}
 
-// 跳转到个人信息页
 const goToProfile = () => {
   if (isLogin.value) {
-    router.push('/profile');
+    router.push('/profile')
   }
-};
+}
 
-
-
-// 跳转到设置页面
 const goToSettings = () => {
-  router.push('/settings');
-};
+  router.push('/settings')
+}
 
-// 退出登录
-const handleLogout = () => {
-  showDialog({
-    title: t('common.confirm'),
-    message: t('my.logout') + '?',
-    showCancelButton: true,
-  }).then((action) => {
-    if (action === 'confirm') {
-      userStore.logout();
-      router.push('/login');
-    }
-  });
-};
-
-// 获取用户信息
-onMounted(async () => {
+const handleLogout = async () => {
   try {
-    await userStore.getUserInfoDetail();
-  } catch (error) {
-    console.error('获取用户信息失败:', error);
+    await ElMessageBox.confirm(
+      t('my.logout') + '?',
+      t('common.confirm'),
+      {
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel') || '取消',
+        type: 'warning'
+      }
+    )
+    userStore.logout()
+    ElMessage.success(t('my.logout') + '成功')
+    router.push('/login')
+  } catch {
+    // 用户取消
   }
-});
+}
+
+onMounted(async () => {
+  if (isLogin.value) {
+    try {
+      await userStore.getUserInfoDetail()
+    } catch (error) {
+      console.error('获取用户信息失败:', error)
+    }
+  }
+})
 </script>
 
 <style scoped>
-.my-container {
-  padding-top: 46px;
-  padding-bottom: 50px;
-  background-color: var(--background-color);
-  color: var(--text-color);
-  min-height: 100vh;
-  box-sizing: border-box;
+.my-page {
+  height: 100%;
 }
 
-.van-nav-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  z-index: 999;
+.my-card {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.card-header {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.user-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
 }
 
 .user-info {
-  display: flex;
-  align-items: center;
-  padding: 20px 16px;
-  background-color: var(--primary-color);
-  color: #fff;
-  border-radius: 8px;
-  margin: 16px;
-  position: relative;
-}
-
-.arrow-icon {
-  position: absolute;
-  right: 16px;
-  color: #969799;
-}
-
-.avatar {
-  margin-right: 16px;
-}
-
-.info {
   flex: 1;
 }
 
-.username {
+.user-info .username {
   font-size: 18px;
-  font-weight: bold;
+  font-weight: 600;
   margin-bottom: 4px;
 }
 
-.desc {
-  font-size: 14px;
-  color: #999;
+.user-info .desc {
+  color: var(--text-color-secondary);
 }
 
-.menu-list {
-  margin: 0 16px;
+.menu-row {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.menu-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.menu-item.danger {
+  color: var(--danger-color);
 }
 </style>
