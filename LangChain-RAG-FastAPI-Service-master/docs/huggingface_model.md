@@ -39,6 +39,23 @@ uv add sentence-transformers torch
    D:\Hugging_Face\models\Qwen3-Reranker-0.6B
    ```
 
+#### 方法三：使用远程重排序API（服务器轻量部署推荐）
+
+如果服务器资源不足以部署本地模型，可以改为调用外部重排序API：
+1. 在后端环境变量中配置 `RERANKER_API_URL`
+2. 可选配置 `RERANKER_API_KEY` 和 `RERANKER_API_TIMEOUT`
+3. 配置后，FastAPI 启动时会自动跳过本地模型检查与下载
+
+阿里云 DashScope 推荐配置（不需要访问 Hugging Face 模型页面）：
+
+```env
+RERANKER_API_PROVIDER=aliyun
+RERANKER_API_URL=https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+RERANKER_API_KEY=your_dashscope_api_key
+RERANKER_API_MODEL=gte-rerank-v2
+RERANKER_API_TIMEOUT=20
+```
+
 ## 环境变量配置
 
 在 `.env` 文件中配置模型路径：
@@ -47,6 +64,23 @@ uv add sentence-transformers torch
 # 重排序模型配置（可选）
 RERANKER_MODEL_PATH=D:\Hugging_Face\models\Qwen3-Reranker-0.6B
 ```
+
+远程API模式配置示例：
+
+```env
+# 远程重排序API（配置后优先使用远程API）
+RERANKER_API_URL=https://your-reranker-api.example.com/reorder
+RERANKER_API_KEY=your_api_key
+RERANKER_API_TIMEOUT=20
+```
+
+远程API期望请求/返回格式：
+
+- 请求：`{"query": "...", "documents": ["doc1", "doc2"]}`
+- 返回支持以下任一结构：
+  - `{"documents": [{"document": "...", "similarity": 0.9}, ...]}`
+  - `{"data": {"documents": [...]}}`
+  - `{"data": [...]}`
 
 ## 测试重排序功能
 

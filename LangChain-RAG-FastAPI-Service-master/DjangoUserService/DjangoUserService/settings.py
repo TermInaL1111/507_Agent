@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 import pymysql
 pymysql.install_as_MySQLdb()
@@ -30,7 +31,10 @@ SECRET_KEY = 'MY_JWT_SECRET_KWY_FOR_USR_AND_I_JUST_WRITE_THIS'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host.strip() for host in os.environ.get(
+    'ALLOWED_HOSTS',
+    'localhost,127.0.0.1,8.137.54.50'
+).split(',') if host.strip()]
 
 
 # Application definition
@@ -100,11 +104,11 @@ SWAGGER_SETTINGS = {
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'django_user_service',
-        'USER': 'root',
-        'PASSWORD': '060517',
-        'HOST': 'localhost',
-        'PORT': '3306',
+        'NAME': os.environ.get('MYSQL_DATABASE', 'chat_history'),
+        'USER': os.environ.get('MYSQL_USER', 'root'),
+        'PASSWORD': os.environ.get('MYSQL_PASSWORD', 'root123'),
+        'HOST': os.environ.get('MYSQL_HOST', 'db'),
+        'PORT': os.environ.get('MYSQL_PORT', '3306'),
         'OPTIONS': {
             'charset': 'utf8mb4',
             'use_unicode': True,
@@ -114,8 +118,11 @@ DATABASES = {
 }
 
 # Celery 配置
-CELERY_BROKER_URL = 'redis://127.0.0.1:6379/1'
-CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/2'
+redis_host = os.environ.get('REDIS_HOST', 'redis')
+redis_port = os.environ.get('REDIS_PORT', '6379')
+
+CELERY_BROKER_URL = f'redis://{redis_host}:{redis_port}/1'
+CELERY_RESULT_BACKEND = f'redis://{redis_host}:{redis_port}/2'
 # 统一时区设置
 CELERY_TIMEZONE = 'Asia/Shanghai'
 # 启用UTC
@@ -145,7 +152,7 @@ CELERY_RESULT_EXPIRES = 3600
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': 'redis://127.0.0.1:6379/3',
+        'LOCATION': f'redis://{redis_host}:{redis_port}/3',
     }
 }
 

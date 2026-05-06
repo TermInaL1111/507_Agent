@@ -1,166 +1,224 @@
 <template>
-  <div class="ai-chat-container">
-    <el-page-header title="AI问答" @back="goToSessions">
-      <template #content>
-        <span class="page-title">AI智能问答</span>
-      </template>
-      <template #extra>
-        <el-button type="primary" @click="goToSessions">
-          <el-icon><ChatLineSquare /></el-icon>
-          会话管理
+  <div class="chat-shell">
+    <aside class="session-panel" :class="{ collapsed: isSessionPanelCollapsed }">
+      <div class="session-panel-top">
+        <el-button text class="collapse-btn" @click="toggleSessionPanel">
+          <el-icon><component :is="isSessionPanelCollapsed ? Expand : Fold" /></el-icon>
         </el-button>
-      </template>
-    </el-page-header>
-    
-    <div class="chat-content">
-      <div class="messages-container" ref="messagesContainer">
-        <div 
-          v-for="(message, index) in messages" 
-          :key="index"
-          :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']"
-        >
-          <div class="message-avatar">
-            <el-avatar 
-              :size="40" 
-              :icon="message.role === 'user' ? User : ChatDotRound"
-              :style="{ background: message.role === 'user' ? '#409EFF' : '#67C23A' }"
-            />
-          </div>
-          <div class="message-content">
-            <div v-if="message.role === 'assistant' && message.content === '' && !message.resultCard" class="typing-indicator">
-              <span></span>
-              <span></span>
-              <span></span>
+        <template v-if="!isSessionPanelCollapsed">
+          <el-button type="primary" plain class="new-session-btn" @click="startNewSession">
+            <el-icon><Plus /></el-icon>
+            新会话
+          </el-button>
+          <el-button text :loading="sessionRefreshing" @click="refreshSessionList(true)">
+            <el-icon><Refresh /></el-icon>
+          </el-button>
+        </template>
+      </div>
+
+      <div v-if="!isSessionPanelCollapsed" class="session-panel-content">
+        <div v-if="sessionStore.isLoading && !sessionStore.sessions.length" class="session-loading">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>加载会话中...</span>
+        </div>
+
+        <el-empty v-else-if="!sessionStore.sessions.length" description="暂无会话" :image-size="72" />
+
+        <div v-else class="session-list">
+          <div
+            v-for="session in sessionStore.sessions"
+            :key="session.session_id"
+            class="session-item"
+            :class="{ active: isCurrentSession(session.session_id) }"
+            @click="openSession(session.session_id)"
+          >
+            <div class="session-item-main">
+              <div class="session-item-title">{{ session.title || '新会话' }}</div>
+              <div class="session-item-time">{{ formatSessionTime(session.updated_at || session.created_at) }}</div>
             </div>
-            <div v-else v-html="formatMessage(message.content)"></div>
-
-            <div v-if="message.role === 'assistant' && message.resultCard" class="result-card" :class="`result-card--${message.resultCard.type}`">
-              <div class="result-card-header">
-                <span class="result-card-title">{{ message.resultCard.title || '结果卡片' }}</span>
-                <el-tag size="small" effect="light" :type="getResultCardTagType(message.resultCard.type)">
-                  {{ getResultCardTypeLabel(message.resultCard.type) }}
-                </el-tag>
-              </div>
-
-              <p v-if="message.resultCard.summary" class="result-card-summary">{{ message.resultCard.summary }}</p>
-
-              <ul v-if="message.resultCard.type === 'answer' && message.resultCard.highlights?.length" class="card-list">
-                <li v-for="(point, pointIndex) in message.resultCard.highlights" :key="`a-${index}-${pointIndex}`">{{ point }}</li>
-              </ul>
-
-              <div v-if="message.resultCard.type === 'recommendation'" class="card-section">
-                <div v-if="message.resultCard.strategy" class="card-meta">推荐策略：{{ message.resultCard.strategy }}</div>
-                <ul v-if="message.resultCard.recommendations?.length" class="card-recommend-list">
-                  <li
-                    v-for="(item, itemIndex) in message.resultCard.recommendations"
-                    :key="`r-${index}-${itemIndex}`"
-                    class="card-recommend-item"
-                  >
-                    <div class="card-recommend-head">
-                      <span class="card-recommend-title">{{ item.title || `推荐项${itemIndex + 1}` }}</span>
-                      <el-tag v-if="item.score" size="small" type="success" effect="plain">{{ item.score }}</el-tag>
-                    </div>
-                    <p v-if="item.reason" class="card-recommend-reason">{{ item.reason }}</p>
-                    <div v-if="item.tags?.length" class="card-tags">
-                      <el-tag v-for="(tag, tagIndex) in item.tags" :key="`rt-${index}-${itemIndex}-${tagIndex}`" size="small" effect="plain">
-                        {{ tag }}
-                      </el-tag>
-                    </div>
-                  </li>
-                </ul>
-              </div>
-
-              <div v-if="message.resultCard.type === 'navigation'" class="card-section">
-                <div class="card-meta" v-if="message.resultCard.start || message.resultCard.end">
-                  {{ message.resultCard.start || '起点未提供' }} → {{ message.resultCard.end || '终点未提供' }}
-                </div>
-                <ul v-if="message.resultCard.routes?.length" class="card-route-list">
-                  <li v-for="(routeItem, routeIndex) in message.resultCard.routes" :key="`n-${index}-${routeIndex}`" class="card-route-item">
-                    <div class="card-route-head">
-                      <span>{{ routeItem.title || `路线${routeIndex + 1}` }}</span>
-                      <span class="card-route-meta">
-                        {{ routeItem.duration || '时长未知' }}
-                        <template v-if="routeItem.distance">· {{ routeItem.distance }}</template>
-                      </span>
-                    </div>
-                    <ol v-if="routeItem.steps?.length" class="card-route-steps">
-                      <li v-for="(stepText, stepIndex) in routeItem.steps" :key="`ns-${index}-${routeIndex}-${stepIndex}`">{{ stepText }}</li>
-                    </ol>
-                  </li>
-                </ul>
-              </div>
-
-              <div v-if="message.resultCard.type === 'check'" class="card-section">
-                <div class="card-meta">
-                  校验结果：
-                  <el-tag size="small" :type="getCheckStatusTagType(message.resultCard.status)">
-                    {{ message.resultCard.status || 'unknown' }}
-                  </el-tag>
-                </div>
-                <ul v-if="message.resultCard.checks?.length" class="card-check-list">
-                  <li v-for="(checkItem, checkIndex) in message.resultCard.checks" :key="`c-${index}-${checkIndex}`" class="card-check-item">
-                    <div class="card-check-head">
-                      <span>{{ checkItem.name || `检查项${checkIndex + 1}` }}</span>
-                      <el-tag size="small" :type="getCheckStatusTagType(checkItem.status)">
-                        {{ checkItem.status || 'unknown' }}
-                      </el-tag>
-                    </div>
-                    <p v-if="checkItem.detail" class="card-check-detail">{{ checkItem.detail }}</p>
-                    <p v-if="checkItem.suggestion" class="card-check-suggestion">建议：{{ checkItem.suggestion }}</p>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <div v-if="message.role === 'assistant' && message.sources?.length" class="message-sources">
-              <div class="sources-title">引用来源</div>
-              <ul class="sources-list">
-                <li
-                  v-for="(source, sourceIndex) in message.sources"
-                  :key="`${index}-${sourceIndex}`"
-                  class="source-item"
-                >
-                  <div class="source-head">
-                    <span class="source-index">[{{ sourceIndex + 1 }}]</span>
-                    <span class="source-title">{{ source.title || `来源${sourceIndex + 1}` }}</span>
-                  </div>
-                  <p v-if="source.content" class="source-content">{{ source.content }}</p>
-                  <a
-                    v-if="source.url"
-                    :href="source.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="source-link"
-                  >
-                    {{ source.url }}
-                  </a>
-                </li>
-              </ul>
-            </div>
+            <el-button text type="danger" class="session-delete-btn" @click.stop="removeSession(session.session_id)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
           </div>
         </div>
       </div>
-      
-      <div class="input-container">
-        <el-input
-          v-model="userInput"
-          type="textarea"
-          :rows="3"
-          placeholder="请输入问题..."
-          class="chat-input"
-          resize="none"
-          @keydown.enter.prevent="handleEnter"
-        />
-        <el-button 
-          type="primary" 
-          size="large"
-          class="send-button" 
-          :disabled="isLoading || !userInput.trim()" 
-          @click="sendMessage"
-        >
-          <el-icon><Promotion /></el-icon>
-          发送
-        </el-button>
+    </aside>
+
+    <div class="ai-chat-container">
+      <div class="chat-header">
+        <div class="chat-header-left">
+          <el-button text class="mobile-toggle" @click="toggleSessionPanel">
+            <el-icon><Menu /></el-icon>
+          </el-button>
+          <span class="page-title">AI智能问答</span>
+        </div>
+      </div>
+
+      <div class="chat-content">
+        <div class="messages-container" ref="messagesContainer">
+          <div
+            v-for="(message, index) in messages"
+            :key="index"
+            :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']"
+          >
+            <div class="message-avatar">
+              <el-avatar
+                :size="40"
+                :icon="message.role === 'user' ? User : ChatDotRound"
+                :style="{ background: message.role === 'user' ? '#409EFF' : '#67C23A' }"
+              />
+            </div>
+            <div class="message-content">
+              <div v-if="message.role === 'assistant' && message.content === '' && !message.resultCard" class="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <div v-else v-html="formatMessage(message.content)"></div>
+
+              <div v-if="message.role === 'assistant' && message.resultCard" class="result-card" :class="`result-card--${message.resultCard.type}`">
+                <div class="result-card-header">
+                  <span class="result-card-title">{{ message.resultCard.title || '结果卡片' }}</span>
+                  <el-tag size="small" effect="light" :type="getResultCardTagType(message.resultCard.type)">
+                    {{ getResultCardTypeLabel(message.resultCard.type) }}
+                  </el-tag>
+                </div>
+
+                <p v-if="message.resultCard.summary" class="result-card-summary">{{ message.resultCard.summary }}</p>
+
+                <ul v-if="message.resultCard.type === 'answer' && message.resultCard.highlights?.length" class="card-list">
+                  <li v-for="(point, pointIndex) in message.resultCard.highlights" :key="`a-${index}-${pointIndex}`">{{ point }}</li>
+                </ul>
+
+                <div v-if="message.resultCard.type === 'recommendation'" class="card-section">
+                  <div v-if="message.resultCard.strategy" class="card-meta">推荐策略：{{ message.resultCard.strategy }}</div>
+                  <ul v-if="message.resultCard.recommendations?.length" class="card-recommend-list">
+                    <li
+                      v-for="(item, itemIndex) in message.resultCard.recommendations"
+                      :key="`r-${index}-${itemIndex}`"
+                      class="card-recommend-item"
+                    >
+                      <div class="card-recommend-head">
+                        <span class="card-recommend-title">{{ item.title || `推荐项${itemIndex + 1}` }}</span>
+                        <el-tag v-if="item.score" size="small" type="success" effect="plain">{{ item.score }}</el-tag>
+                      </div>
+                      <p v-if="item.reason" class="card-recommend-reason">{{ item.reason }}</p>
+                      <div v-if="item.tags?.length" class="card-tags">
+                        <el-tag v-for="(tag, tagIndex) in item.tags" :key="`rt-${index}-${itemIndex}-${tagIndex}`" size="small" effect="plain">
+                          {{ tag }}
+                        </el-tag>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+
+                <div v-if="message.resultCard.type === 'navigation'" class="card-section">
+                  <div class="card-meta" v-if="message.resultCard.start || message.resultCard.end">
+                    {{ message.resultCard.start || '起点未提供' }} → {{ message.resultCard.end || '终点未提供' }}
+                  </div>
+                  <ul v-if="message.resultCard.routes?.length" class="card-route-list">
+                    <li v-for="(routeItem, routeIndex) in message.resultCard.routes" :key="`n-${index}-${routeIndex}`" class="card-route-item">
+                      <div class="card-route-head">
+                        <span>{{ routeItem.title || `路线${routeIndex + 1}` }}</span>
+                        <span class="card-route-meta">
+                          {{ routeItem.duration || '时长未知' }}
+                          <template v-if="routeItem.distance">· {{ routeItem.distance }}</template>
+                        </span>
+                      </div>
+                      <ol v-if="routeItem.steps?.length" class="card-route-steps">
+                        <li v-for="(stepText, stepIndex) in routeItem.steps" :key="`ns-${index}-${routeIndex}-${stepIndex}`">{{ stepText }}</li>
+                      </ol>
+                    </li>
+                  </ul>
+                </div>
+
+                <div v-if="message.resultCard.type === 'check'" class="card-section">
+                  <div class="card-meta">
+                    校验结果：
+                    <el-tag size="small" :type="getCheckStatusTagType(message.resultCard.status)">
+                      {{ message.resultCard.status || 'unknown' }}
+                    </el-tag>
+                  </div>
+                  <ul v-if="message.resultCard.checks?.length" class="card-check-list">
+                    <li v-for="(checkItem, checkIndex) in message.resultCard.checks" :key="`c-${index}-${checkIndex}`" class="card-check-item">
+                      <div class="card-check-head">
+                        <span>{{ checkItem.name || `检查项${checkIndex + 1}` }}</span>
+                        <el-tag size="small" :type="getCheckStatusTagType(checkItem.status)">
+                          {{ checkItem.status || 'unknown' }}
+                        </el-tag>
+                      </div>
+                      <p v-if="checkItem.detail" class="card-check-detail">{{ checkItem.detail }}</p>
+                      <p v-if="checkItem.suggestion" class="card-check-suggestion">建议：{{ checkItem.suggestion }}</p>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div v-if="message.role === 'assistant' && message.sources?.length" class="message-sources">
+                <div class="sources-title">引用来源</div>
+                <ul class="sources-list">
+                  <li
+                    v-for="(source, sourceIndex) in message.sources"
+                    :key="`${index}-${sourceIndex}`"
+                    class="source-item"
+                  >
+                    <div class="source-head">
+                      <span class="source-index">[{{ sourceIndex + 1 }}]</span>
+                      <span class="source-title">{{ source.title || `来源${sourceIndex + 1}` }}</span>
+                    </div>
+                    <p v-if="source.content" class="source-content">{{ source.content }}</p>
+                    <a
+                      v-if="source.url"
+                      :href="source.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="source-link"
+                    >
+                      {{ source.url }}
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="input-container">
+          <el-dropdown trigger="click" @command="handleFeatureCommand">
+            <el-button plain class="feature-button">
+              <el-icon><Grid /></el-icon>
+              功能菜单
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="item in featureMenuItems" :key="item.path" :command="item.path">
+                  <el-icon><component :is="item.icon" /></el-icon>
+                  <span>{{ item.label }}</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+
+          <el-input
+            v-model="userInput"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入问题..."
+            class="chat-input"
+            resize="none"
+            @keydown.enter.prevent="handleEnter"
+          />
+          <el-button
+            type="primary"
+            size="large"
+            class="send-button"
+            :disabled="isLoading || !userInput.trim()"
+            @click="sendMessage"
+          >
+            <el-icon><Promotion /></el-icon>
+            发送
+          </el-button>
+        </div>
       </div>
     </div>
   </div>
@@ -169,8 +227,28 @@
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { ElMessage } from 'element-plus';
-import { User, ChatDotRound, ChatLineSquare, Promotion } from '@element-plus/icons-vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import {
+  User,
+  ChatDotRound,
+  Promotion,
+  Plus,
+  Refresh,
+  Delete,
+  Loading,
+  Menu,
+  Fold,
+  Expand,
+  Grid,
+  Calendar,
+  Reading,
+  Notebook,
+  Location,
+  Document,
+  Collection,
+  UserFilled,
+  Setting
+} from '@element-plus/icons-vue';
 import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
@@ -180,15 +258,6 @@ import 'highlight.js/lib/common';
 import { useUserStore } from '../store/user';
 import { useSessionStore } from '../store/session';
 
-// 从cookie中获取CSRF token
-const getCsrfToken = () => {
-  const cookieValue = document.cookie
-    .split('; ')
-    .find(row => row.startsWith('csrftoken='))
-    ?.split('=')[1];
-  return cookieValue || '';
-};
-
 // 聊天消息
 const messages = ref([
   { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', sources: [], resultCard: null }
@@ -197,12 +266,24 @@ const userInput = ref('');
 const messagesContainer = ref(null);
 const isLoading = ref(false);
 const sessionId = ref('');
-const hasJumped = ref(false);
+const isSessionPanelCollapsed = ref(false);
+const sessionRefreshing = ref(false);
 
 const router = useRouter();
 const route = useRoute();
 const userStore = useUserStore();
 const sessionStore = useSessionStore();
+
+const featureMenuItems = [
+  { path: '/schedule', label: '课表服务', icon: Calendar },
+  { path: '/course-plan', label: '课程规划', icon: Reading },
+  { path: '/course-recommend', label: '选课建议', icon: Notebook },
+  { path: '/campus-map', label: '校园导航', icon: Location },
+  { path: '/document-assistant', label: '文书辅助', icon: Document },
+  { path: '/knowledge-manage', label: '知识库管理', icon: Collection },
+  { path: '/profile', label: '个人中心', icon: UserFilled },
+  { path: '/settings', label: '系统设置', icon: Setting }
+];
 
 // 配置marked使用marked-highlight插件
 marked.use(markedHighlight({
@@ -230,6 +311,117 @@ const formatMessage = (content) => {
     console.error('Markdown解析错误:', error);
     return content;
   }
+};
+
+const resetToWelcomeMessage = () => {
+  messages.value = [
+    { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', sources: [], resultCard: null }
+  ];
+};
+
+const toggleSessionPanel = () => {
+  isSessionPanelCollapsed.value = !isSessionPanelCollapsed.value;
+};
+
+const getCurrentUserId = () => {
+  if (!userStore.userInfo) return '';
+  return userStore.userInfo.uuid || userStore.userInfo.id || userStore.userInfo.user_id || '';
+};
+
+const loadSessionList = async (showSuccess = false) => {
+  if (!userStore.getLoginStatus) return;
+
+  if (!userStore.userInfo) {
+    const profileResult = await userStore.getUserInfoDetail();
+    if (!profileResult.success) {
+      ElMessage.error(profileResult.message || '获取用户信息失败');
+      return;
+    }
+  }
+
+  const userId = getCurrentUserId();
+  if (!userId) {
+    ElMessage.error('获取用户ID失败，请重新登录后重试');
+    return;
+  }
+
+  const result = await sessionStore.getUserSessions(userId);
+  if (result.success) {
+    if (showSuccess) {
+      ElMessage.success('会话列表已刷新');
+    }
+  } else {
+    ElMessage.error(result.message || '获取会话列表失败');
+  }
+};
+
+const refreshSessionList = async (showSuccess = false) => {
+  sessionRefreshing.value = true;
+  try {
+    await loadSessionList(showSuccess);
+  } finally {
+    sessionRefreshing.value = false;
+  }
+};
+
+const formatSessionTime = (timeString) => {
+  if (!timeString) return '';
+  try {
+    return new Date(timeString).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return timeString;
+  }
+};
+
+const isCurrentSession = (id) => {
+  return sessionId.value === id || route.params.sessionId === id;
+};
+
+const openSession = (id) => {
+  router.push(`/aichat/${id}`);
+};
+
+const startNewSession = () => {
+  sessionId.value = '';
+  sessionStore.setCurrentSession(null);
+  resetToWelcomeMessage();
+  router.push('/aichat');
+};
+
+const removeSession = async (id) => {
+  try {
+    await ElMessageBox.confirm('确定要删除该会话吗？删除后无法恢复。', '删除会话', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    });
+  } catch {
+    return;
+  }
+
+  const result = await sessionStore.deleteSession(id);
+  if (!result.success) {
+    ElMessage.error(result.message || '删除会话失败');
+    return;
+  }
+
+  ElMessage.success('会话已删除');
+
+  if (isCurrentSession(id)) {
+    startNewSession();
+  }
+
+  await loadSessionList(false);
+};
+
+const handleFeatureCommand = (path) => {
+  if (!path || typeof path !== 'string') return;
+  router.push(path);
 };
 
 const normalizeCardType = (typeValue) => {
@@ -645,6 +837,7 @@ const fetchAIResponse = async (userMessage) => {
                   router.push(`/aichat/${json.session_id}`);
                 }
               }
+              await loadSessionList(false);
               break;
             case 'error':
               throw new Error(json.content || 'API错误');
@@ -666,11 +859,6 @@ const fetchAIResponse = async (userMessage) => {
     console.error('Fetch error:', error);
     throw error;
   }
-};
-
-// 跳转到会话管理页面
-const goToSessions = () => {
-  router.push('/sessions');
 };
 
 // 滚动到底部
@@ -701,11 +889,17 @@ watch(() => route.params.sessionId, async (newSessionId) => {
       console.error('加载会话历史失败:', error);
       ElMessage.error('加载会话历史失败');
     }
+  } else {
+    sessionId.value = '';
+    sessionStore.setCurrentSession(null);
+    resetToWelcomeMessage();
   }
 }, { immediate: true });
 
 // 组件挂载时检查是否有当前会话或路由参数中的会话ID
 onMounted(async () => {
+  await loadSessionList(false);
+
   // 检查路由参数中是否有sessionId
   const routeSessionId = route.params.sessionId;
   
@@ -725,6 +919,8 @@ onMounted(async () => {
   } else if (sessionStore.currentSession) {
     // 从store中加载会话历史
     loadSessionHistory(sessionStore.currentSession);
+  } else {
+    resetToWelcomeMessage();
   }
   
   scrollToBottom();
@@ -759,22 +955,147 @@ const loadSessionHistory = (session) => {
 </script>
 
 <style scoped>
+.chat-shell {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: #f3f4f6;
+}
+
+.session-panel {
+  width: 280px;
+  height: 100%;
+  background: #101826;
+  border-right: 1px solid #1f2d3d;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.2s ease;
+  flex-shrink: 0;
+}
+
+.session-panel.collapsed {
+  width: 64px;
+}
+
+.session-panel-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid #1f2d3d;
+}
+
+.collapse-btn {
+  color: #d7deea;
+}
+
+.new-session-btn {
+  flex: 1;
+}
+
+.session-panel-content {
+  flex: 1;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.session-loading {
+  color: #d7deea;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 8px;
+}
+
+.session-list {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.session-item:hover {
+  background: rgba(64, 158, 255, 0.15);
+}
+
+.session-item.active {
+  background: rgba(64, 158, 255, 0.2);
+  border-color: rgba(64, 158, 255, 0.45);
+}
+
+.session-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-item-title {
+  color: #f3f6fd;
+  font-size: 13px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-item-time {
+  margin-top: 5px;
+  color: #9aa8bf;
+  font-size: 12px;
+}
+
+.session-delete-btn {
+  opacity: 0;
+}
+
+.session-item:hover .session-delete-btn,
+.session-item.active .session-delete-btn {
+  opacity: 1;
+}
+
 .ai-chat-container {
+  flex: 1;
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 20px;
+  min-width: 0;
+  padding: 16px;
   box-sizing: border-box;
 }
 
 .page-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: #303133;
 }
 
-:deep(.el-page-header) {
-  margin-bottom: 20px;
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-toggle {
+  display: none;
 }
 
 .chat-content {
@@ -789,8 +1110,9 @@ const loadSessionHistory = (session) => {
   overflow-y: auto;
   padding: 20px;
   background: #fff;
-  border-radius: 8px;
-  margin-bottom: 20px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  border: 1px solid #e9eef5;
 }
 
 .message {
@@ -1023,10 +1345,16 @@ const loadSessionHistory = (session) => {
 .input-container {
   display: flex;
   gap: 12px;
-  padding: 20px;
+  padding: 14px;
   background-color: #fff;
-  border-radius: 8px;
+  border-radius: 12px;
   align-items: flex-end;
+  border: 1px solid #e9eef5;
+}
+
+.feature-button {
+  height: 40px;
+  align-self: flex-end;
 }
 
 .chat-input {
@@ -1034,7 +1362,64 @@ const loadSessionHistory = (session) => {
 }
 
 .send-button {
-  height: fit-content;
+  height: 40px;
+}
+
+@media (max-width: 992px) {
+  .chat-shell {
+    position: relative;
+  }
+
+  .session-panel {
+    position: absolute;
+    z-index: 20;
+    left: 0;
+    top: 0;
+    height: 100%;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .session-panel.collapsed {
+    width: 280px;
+    transform: translateX(-100%);
+  }
+
+  .ai-chat-container {
+    padding: 10px;
+  }
+
+  .mobile-toggle {
+    display: inline-flex;
+  }
+
+  .messages-container {
+    padding: 12px;
+  }
+
+  .message {
+    max-width: 100%;
+  }
+
+  .input-container {
+    gap: 8px;
+    padding: 10px;
+    flex-wrap: wrap;
+  }
+
+  .feature-button {
+    order: 1;
+  }
+
+  .chat-input {
+    order: 2;
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .send-button {
+    order: 3;
+    margin-left: auto;
+  }
 }
 
 /* Markdown 样式 */
