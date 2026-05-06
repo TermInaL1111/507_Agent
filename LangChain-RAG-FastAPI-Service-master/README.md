@@ -419,6 +419,3 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 - **[API 文档](./backend/api.md)**：后端 API 接口文档
 - **[用户服务 API](./DjangoUserService/api.md)**：用户服务 API 文档
 
-## 联系方式
-
-如有任何问题或建议，请随时联系我们。😊
