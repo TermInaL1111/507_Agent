@@ -29,64 +29,73 @@
 - **微服务架构** 🏗️：分离的用户服务和对话服务，易于扩展和维护
 - **高性能** ⚡：基于 FastAPI 和 ChromaDB，提供卓越的性能表现
 
-## 项目流程图
+## 高层业务流程图（满足3.5要求）
 
 ```mermaid
 flowchart TD
-    subgraph "前端层"
-        A["用户界面
-        (Vue 3)"] -->|发送查询| B["API请求
-        (Axios)"]
-        C["会话管理
-        (Pinia)"] -->|状态管理| B
-        D["用户认证
-        (Vue Router)"] -->|路由守卫| B
+    A[学生登录系统] --> B[发起咨询或办事请求]
+    B --> C{请求类型}
+    C -->|校园知识问答| D[检索知识库并生成答案]
+    C -->|事务办理辅助| E[Agent引导补充信息]
+    E --> F[生成办理结果或文书草稿]
+    D --> G[返回结果与依据]
+    F --> G
+    G --> H{学生是否满意}
+    H -->|满意| I[结束并保存会话]
+    H -->|不满意| J[补充问题继续对话]
+    J --> B
+
+    K[管理员上传/更新校园文档] --> L[知识库更新生效]
+    L --> D
+```
+
+## 系统架构流程图
+
+```mermaid
+flowchart TD
+    subgraph FE["前端层（Vue3 + Element Plus）"]
+        A["AIChat\n- 左侧可折叠会话栏\n- 输入区功能菜单\n- SSE结果卡片渲染"] -->|Axios/SSE| B["API Gateway 调用"]
+        C["Sessions 会话页\n- 列表/刷新/删除"] -->|Axios| B
+        D["KnowledgeManage\n- 单/多文件上传\n- 向量清理\n- 重排序测试"] -->|Axios| B
+        E["业务页面占位\nSchedule/CoursePlan/CourseRecommend\nCampusMap/DocumentAssistant"] -->|Axios| B
+        F["登录/注册/个人中心\n(Vue Router + Pinia)"] -->|JWT登录态| B
     end
 
-    subgraph "API路由层"
-        B -->|REST API| E["聊天路由
-        (FastAPI)"]
-        E -->|认证| F["认证中间件
-        (JWT)"]
-        E -->|限流| G["限流控制
-        (Redis)"]
+    subgraph API["API路由层（FastAPI + Django User Service）"]
+        B --> G["/api/agent/query/stream\n/api/rag/query\n/api/session/*\n/api/sessions/*"]
+        B --> H["/api/vector/add/single\n/api/vector/add/multiple\n/api/vector/clean\n/api/reorder"]
+        B --> I["/user/login / user/register\n/user/detail / user/update"]
+        G --> J["JWT认证 + Redis限流中间件"]
+        H --> J
     end
 
-    subgraph "业务服务层"
-        E -->|代理查询| H["ChatService
-        (Python)"]
-        H -->|会话管理| I["SessionManager
-        (MySQL)"]
-        H -->|RAG检索| J["RagService
-        (LangChain)"]
-        H -->|向量存储| K["VectorStoreService
-        (ChromaDB)"]
-        H -->|智能代理| L["Agent
-        (LangChain)"]
-        H -->|文档重排序| M["ReorderService
-        (Hugging Face)"]
+    subgraph SVC["业务服务层"]
+        G --> K["ChatService"]
+        H --> L["VectorStoreService"]
+        K --> M["SessionManager"]
+        K --> N["RagService"]
+        K --> O["Agent + Tools"]
+        K --> P["ReorderService（双模式）"]
+        N --> P
     end
 
-    subgraph "数据存储层"
-        I -->|存储会话| N["MySQL数据库"]
-        K -->|向量存储| O["ChromaDB向量库"]
-        K -->|文件存储| P["文件系统"]
-        G -->|缓存| Q["Redis缓存"]
+    subgraph DATA["数据与缓存层"]
+        M --> Q["MySQL（会话）"]
+        I --> R["MySQL（用户）"]
+        L --> S["ChromaDB向量库"]
+        L --> T["文件系统（上传文档）"]
+        J --> U["Redis（限流/缓存）"]
     end
 
-    subgraph "AI模型服务"
-        L -->|LLM调用| R["DashScope API
-        (Qwen3-Max)"]
-        J -->|嵌入模型| S["文本嵌入
-        (text-embedding-v4)"]
-        M -->|重排序模型| T["Qwen3-Reranker-0.6B
-        (PyTorch/Sentence-Transformers)"]
+    subgraph AI["AI模型与外部服务"]
+        O --> V["DashScope LLM\nqwen3-max"]
+        N --> W["DashScope Embedding\ntext-embedding-v4"]
+        P --> X["重排序本地模式\nQwen3-Reranker-0.6B\n(PyTorch/Sentence-Transformers)"]
+        P --> Y["重排序远程模式\nDashScope Text-Rerank API\n(gte-rerank-v2)"]
     end
 
-    subgraph "用户服务"
-        U["Django用户服务"] -->|认证授权| F
-        U -->|用户管理| V["MySQL用户数据库"]
-    end
+    Z["开发与质量保障\nJenkins + TAPD + SonarQube + Tgit"] -.持续集成/测试/部署.- G
+    Z -.接口测试脚本(Postman/JMeter).- H
 ```
 
 
@@ -404,6 +413,7 @@ separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
 项目文档位于 `docs/` 目录：
 
 - **[Hugging Face 模型配置](./docs/huggingface_model.md)**：详细的模型下载和配置说明
+- **[软件设计文档](./docs/software_design.md)**：体系结构级 + 构件级设计（满足3.5要求）
 - **[部署指南](./docs/deployment.md)**：生产环境部署详细步骤
 - **[故障排除](./docs/troubleshooting.md)**：常见问题和解决方案
 - **[API 文档](./backend/api.md)**：后端 API 接口文档

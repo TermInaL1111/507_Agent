@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "SSH FS - aliyun-centos2",
+			"uri": "ssh://aliyun-centos2/root"
+		}
+	],
+	"settings": {}
+}
