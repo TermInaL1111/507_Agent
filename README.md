@@ -1,414 +1,516 @@
-# 🚀 智能对话服务 (v1.1.0)
+# 507 Agent v1.0 云服务器部署说明
 
-## 📋 目录
+507 Agent 是一个面向校园场景的 AI 助手系统，当前版本包含 AI 问答、RAG 知识库、培养方案检索、时间表管理、校园导航、用户登录与会话管理等功能。
 
-- [项目简介](#项目简介)
-- [核心特性](#核心特性)
-- [项目演示](#项目演示)
-- [快速开始](#快速开始)
-- [技术栈](#技术栈)
-- [项目结构](#项目结构)
-- [API 文档](#api-文档)
-- [配置说明](#配置说明)
-- [部署指南](#部署指南)
-- [开发指南](#开发指南)
-- [故障排除](#故障排除)
-- [文档](#文档)
-- [联系方式](#联系方式)
+本 README 主要说明如何把当前 `version1.0` 分支部署到云服务器。
 
-## 项目简介
+## 一、系统组成
 
-这是一个基于 FastAPI + LangChain 构建的企业级智能对话系统，集成了先进的 RAG（检索增强生成）技术，能够基于文档内容提供高精度的智能问答服务。系统采用微服务架构，具备会话持久化、多语言支持和模块化设计等特性。
+项目由三个主要服务组成：
 
-## 核心特性
+| 服务 | 目录 | 默认端口 | 说明 |
+| --- | --- | --- | --- |
+| 前端服务 | `front` | `3000` / Nginx 静态服务 | Vue 3 + Vite |
+| AI 后端服务 | `backend` | `8000` | FastAPI + LangChain + RAG |
+| 用户服务 | `DjangoUserService` | `8001` | Django 用户登录、注册、用户信息 |
 
-- **智能问答** 💬：基于 RAG 技术，结合文档检索和大语言模型，提供精准的问答体验
-- **会话持久化** 💾：使用 MySQL 存储会话历史，支持长期保存和回溯
-- **多语言支持** 🌐：前端集成 i18n，支持中英文界面切换
-- **文档管理** 📄：支持文档上传、处理和智能检索
-- **微服务架构** 🏗️：分离的用户服务和对话服务，易于扩展和维护
-- **高性能** ⚡：基于 FastAPI 和 ChromaDB，提供卓越的性能表现
+依赖的基础组件：
 
-## 项目流程图
+- MySQL：存储用户、会话、日程、文件索引等结构化数据
+- Redis：缓存、限流、用户信息缓存
+- Chroma：本地向量库，默认保存在 `backend/data/chromadb`
+- DashScope / 通义千问 API：大模型和 embedding
+- 高德地图 API：校园地图和站内路线规划
 
-```mermaid
-flowchart TD
-    subgraph "前端层"
-        A["用户界面
-        (Vue 3)"] -->|发送查询| B["API请求
-        (Axios)"]
-        C["会话管理
-        (Pinia)"] -->|状态管理| B
-        D["用户认证
-        (Vue Router)"] -->|路由守卫| B
-    end
+## 二、推荐服务器环境
 
-    subgraph "API路由层"
-        B -->|REST API| E["聊天路由
-        (FastAPI)"]
-        E -->|认证| F["认证中间件
-        (JWT)"]
-        E -->|限流| G["限流控制
-        (Redis)"]
-    end
+推荐使用 Ubuntu 22.04 / 24.04 云服务器。
 
-    subgraph "业务服务层"
-        E -->|代理查询| H["ChatService
-        (Python)"]
-        H -->|会话管理| I["SessionManager
-        (MySQL)"]
-        H -->|RAG检索| J["RagService
-        (LangChain)"]
-        H -->|向量存储| K["VectorStoreService
-        (ChromaDB)"]
-        H -->|智能代理| L["Agent
-        (LangChain)"]
-        H -->|文档重排序| M["ReorderService
-        (Hugging Face)"]
-    end
+最低建议配置：
 
-    subgraph "数据存储层"
-        I -->|存储会话| N["MySQL数据库"]
-        K -->|向量存储| O["ChromaDB向量库"]
-        K -->|文件存储| P["文件系统"]
-        G -->|缓存| Q["Redis缓存"]
-    end
+- CPU：2 核及以上
+- 内存：4 GB 及以上，若本地加载 reranker 建议 8 GB+
+- 磁盘：40 GB 及以上
+- Python：3.12
+- Node.js：20 LTS
+- MySQL：8.x
+- Redis：6.x / 7.x
+- Nginx：用于反向代理和前端静态资源服务
 
-    subgraph "AI模型服务"
-        L -->|LLM调用| R["DashScope API
-        (Qwen3-Max)"]
-        J -->|嵌入模型| S["文本嵌入
-        (text-embedding-v4)"]
-        M -->|重排序模型| T["Qwen3-Reranker-0.6B
-        (PyTorch/Sentence-Transformers)"]
-    end
-
-    subgraph "用户服务"
-        U["Django用户服务"] -->|认证授权| F
-        U -->|用户管理| V["MySQL用户数据库"]
-    end
-```
-
-
-
-## 项目演示
-
-### AI 聊天界面
-![AI聊天界面](./images/aichat.png)
-
-### 聊天管理界面
-![聊天管理界面](./images/chat_manager.png)
-
-### 用户服务界面
-![用户服务界面](./images/user_service.png)
-
-## 快速开始
-
-### 环境要求
-
-#### 后端环境
-- Python 3.12+
-- uv
-
-#### 前端环境
-- Node.js 16+
-- npm 或 pnpm
-
-### 克隆项目
+## 三、获取代码
 
 ```bash
-git clone https://github.com/RMA-MUN/LangChain-RAG-FastAPI-Service.git
-cd LangChain-RAG-FastAPI-Service
+git clone https://github.com/TermInaL1111/507_Agent.git
+cd 507_Agent
+git checkout version1.0
 ```
 
-### 安装依赖
+如果服务器无法访问 GitHub，可以先在本地下载压缩包，再上传到服务器。
 
-#### 后端依赖
+## 四、安装系统依赖
+
 ```bash
-# 进入后端目录
-cd backend
-
-# 使用 uv 安装依赖
-uv sync
+sudo apt update
+sudo apt install -y git curl wget nginx mysql-server redis-server python3.12 python3.12-venv python3-pip
 ```
 
-#### 前端依赖
+安装 `uv`：
+
 ```bash
-# 进入前端目录
-cd front
-
-# 安装依赖
-npm install
-# 或使用 pnpm
-pnpm install
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.bashrc
 ```
 
-### 环境配置
+安装 Node.js 20：
 
-#### 创建环境变量文件
-在 `backend` 目录下创建 `.env` 文件，参考.env.example文件填写个人配置：
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+node -v
+npm -v
+```
+
+## 五、数据库准备
+
+登录 MySQL：
+
+```bash
+sudo mysql
+```
+
+创建数据库和用户，密码请自行替换：
+
+```sql
+CREATE DATABASE chat_history CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE django_user_service CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE USER 'agent_user'@'localhost' IDENTIFIED BY 'your_mysql_password';
+GRANT ALL PRIVILEGES ON chat_history.* TO 'agent_user'@'localhost';
+GRANT ALL PRIVILEGES ON django_user_service.* TO 'agent_user'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+启动 Redis：
+
+```bash
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
+```
+
+## 六、环境变量配置
+
+不要提交真实 `.env` 文件到 GitHub。部署时在服务器上复制示例文件：
+
+```bash
+cp backend/.env.example backend/.env
+cp front/.env.example front/.env.local
+cp DjangoUserService/.env.example DjangoUserService/.env
+```
+
+### 1. `backend/.env`
 
 ```env
-# DashScope API Key (必填)
+MYSQL_USER=agent_user
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_DATABASE=chat_history
+
+DJANGO_API_URL=http://127.0.0.1:8001
+
+SECRET_KEY=your_shared_jwt_secret
+ALGORITHM=HS256
+
+ALIYUN_ACCESS_KEY_SECRET=your_dashscope_api_key
+ALIYUN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 DASHSCOPE_API_KEY=your_dashscope_api_key
 
-# 数据库配置
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=your_password
-DB_NAME=chatbot
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=3
 
-# 安全配置
-SECRET_KEY=your_secret_key
+AMAP_WEB_SERVICE_KEY=your_amap_web_service_key
 
-# 重排序模型配置（可选）
-RERANKER_MODEL_PATH=D:\Hugging_Face\models\Qwen3-Reranker-0.6B
+SKIP_RERANKER_DOWNLOAD=true
+RERANKER_MODEL_PATH=/opt/models/Qwen3-Reranker-0.6B
 
-# LangSmith_API_KEY，自行前往 https://smith.langchain.com/ 官网注册获取api key
-LANGCHAIN_TRACING_V2=true
+LANGCHAIN_TRACING_V2=false
 LANGCHAIN_API_KEY=your_langsmith_api_key
-LANGCHAIN_PROJECT=my-fastapi-langchain-project
+LANGCHAIN_PROJECT=507-agent
 ```
 
-### Hugging Face 模型配置
+### 2. `DjangoUserService/.env`
 
-详细的模型下载和配置说明请参考：[Hugging Face 模型配置](./docs/huggingface_model.md)
+```env
+DJANGO_SECRET_KEY=your_django_secret_key
+DJANGO_DB_NAME=django_user_service
+DJANGO_DB_USER=agent_user
+DJANGO_DB_PASSWORD=your_mysql_password
+DJANGO_DB_HOST=localhost
+DJANGO_DB_PORT=3306
 
-#### 模型配置
-修改 `backend/app/config/rag.yaml` 文件：
-
-```yaml
-# 聊天模型配置
-chat_model_name: qwen3-max
-
-# 文本嵌入模型配置
-text_embedding_model_name: text-embedding-v4
+CELERY_BROKER_URL=redis://127.0.0.1:6379/1
+CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/2
+DJANGO_REDIS_CACHE_URL=redis://127.0.0.1:6379/3
 ```
 
-#### 向量数据库配置
-修改 `backend/app/config/chroma.yaml` 文件：
+### 3. `front/.env.local`
 
-```yaml
-# 向量数据库配置
-collection_name: rag_collection
-persist_directory: data/chromadb
-k: 3
-
-# 文件处理配置
-data_path: data
-md5_hex_store: data/md5_hex_store/md5_hex_store.txt
-allow_knowledge_file_types: ["txt", "pdf"]
-
-# 文档切分配置
-chunk_size: 200
-chunk_overlap: 20
-separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
+```env
+VITE_AMAP_KEY=your_amap_js_api_key
+VITE_AMAP_SECURITY_CODE=your_amap_security_js_code
 ```
 
-### 启动服务
+注意：`VITE_` 开头变量会进入前端构建产物，不要把数据库密码、DashScope Key、Web Service Key 放到前端。
 
-#### 启动后端服务
+## 七、安装项目依赖
+
+### 1. FastAPI 后端
+
 ```bash
 cd backend
-uvicorn main:app --reload
+uv sync
+cd ..
 ```
-服务将在 `http://localhost:8000` 运行。
 
-#### 启动前端服务
+### 2. Django 用户服务
+
+```bash
+cd DjangoUserService
+uv sync
+uv run python manage.py migrate
+cd ..
+```
+
+### 3. 前端
+
 ```bash
 cd front
-npm run dev
-# 或使用 pnpm
-pnpm run dev
+npm install
+npm run build
+cd ..
 ```
-前端将在 `http://localhost:3000` 运行。
 
-#### 启动用户服务
+构建完成后，前端静态文件在：
+
+```text
+front/dist
+```
+
+## 八、测试启动
+
+先用命令行测试两个后端服务是否正常。
+
+### 1. 启动 FastAPI
+
 ```bash
-# 进入 Django 用户服务目录
+cd backend
+uv run uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+访问：
+
+```text
+http://服务器IP:8000/docs
+```
+
+### 2. 启动 Django 用户服务
+
+```bash
 cd DjangoUserService
-
-# 使用 uv 安装依赖
-uv sync
-
-# 启动 Django 服务
-uv run python manage.py runserver 8001
+uv run python manage.py runserver 127.0.0.1:8001
 ```
-用户服务将在 `http://localhost:8001` 运行。
 
-#### 启动mysql服务
+确认服务可以启动后，再配置 systemd 长期运行。
+
+## 九、systemd 服务配置
+
+假设项目目录为：
+
+```text
+/opt/507_Agent
+```
+
+如果你的目录不同，请同步替换下面配置里的路径。
+
+### 1. FastAPI 服务
+
+创建文件：
 
 ```bash
-# 管理员运行cmd或powershell
-net start mysql
+sudo nano /etc/systemd/system/507-agent-backend.service
 ```
 
-#### 启动redis服务
+写入：
+
+```ini
+[Unit]
+Description=507 Agent FastAPI Backend
+After=network.target mysql.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/507_Agent/backend
+ExecStart=/opt/507_Agent/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 2. Django 用户服务
+
+创建文件：
 
 ```bash
-# 如果你是直接解压安装的redis
-redis-server
-
-# 如果是服务版的redis，管理员打开终端
-net start redis
+sudo nano /etc/systemd/system/507-agent-user.service
 ```
 
-#### 其他服务
+写入：
+
+```ini
+[Unit]
+Description=507 Agent Django User Service
+After=network.target mysql.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/507_Agent/DjangoUserService
+ExecStart=/opt/507_Agent/DjangoUserService/.venv/bin/python manage.py runserver 127.0.0.1:8001
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动服务：
 
 ```bash
-# 如果使用ollama本地的模型，需要启动ollama服务
-ollama serve
+sudo systemctl daemon-reload
+sudo systemctl enable 507-agent-backend
+sudo systemctl enable 507-agent-user
+sudo systemctl start 507-agent-backend
+sudo systemctl start 507-agent-user
 ```
 
+查看日志：
 
-
-## 技术栈
-
-### 后端技术
-- **FastAPI** ⚡：高性能异步 Web 框架
-- **LangChain** 🦜：大语言模型应用开发框架
-- **ChromaDB** 📚：轻量级向量数据库，用于高效文档检索
-- **Django** 🎯：用户认证和管理系统
-- **MySQL** 🗄️：关系型数据库，用于存储用户数据和会话历史
-- **Redis** ⚡：缓存数据库，用于提高系统性能
-- **DashScope API** 🔑：提供大语言模型和嵌入模型服务
-- **Hugging Face** 🤗：提供预训练模型和模型下载服务
-- **PyTorch** 🧠：深度学习框架，用于模型推理
-- **Sentence-Transformers** 📝：句子嵌入和语义匹配库
-
-### 前端技术
-- **Vue 3** 🖼️：现代化前端框架
-- **Vite** ⚡：极速构建工具
-- **Vue Router** 🛣️：路由管理
-- **Pinia** 📦：状态管理
-- **i18n** 🌍：国际化支持
-
-## 项目结构
-
-```
-├── backend/                  # FastAPI 后端服务
-│   ├── app/                  # 应用代码
-│   │   ├── agent/            # 智能代理模块
-│   │   ├── config/           # 配置文件目录
-│   │   ├── model/            # 数据模型定义
-│   │   ├── prompt/           # 提示词模板
-│   │   ├── rag/              # RAG 核心功能
-│   │   ├── router/           # API 路由定义
-│   │   ├── services/         # 业务服务层
-│   │   └── utils/            # 工具函数
-│   ├── data/                 # 数据存储目录
-│   ├── main.py               # 应用入口文件
-│   └── requirements.txt      # 后端依赖列表
-├── front/                    # Vue 前端项目
-│   ├── src/                  # 源代码
-│   ├── public/               # 静态资源
-│   └── package.json          # 前端依赖配置
-├── DjangoUserService/        # Django 用户服务
-└── README.md                 # 项目说明文档
+```bash
+sudo journalctl -u 507-agent-backend -f
+sudo journalctl -u 507-agent-user -f
 ```
 
-## API 文档
+## 十、Nginx 配置
 
-### FastAPI 后端 API
-- **[API 文档](./backend/api.md)**：查看详细的 API 接口文档
-- **[交互式文档](http://localhost:8000/docs)**：启动服务后访问自动生成的交互式 API 文档
+创建配置文件：
 
-### Django 用户服务 API
-- **[API 文档](./DjangoUserService/api.md)**：查看详细的用户服务 API 文档
-- **[交互式文档](http://localhost:8000/api/)**：启动服务后访问用户服务 API 文档
+```bash
+sudo nano /etc/nginx/sites-available/507-agent
+```
 
-## 配置说明
+写入，`server_name` 替换为你的域名或服务器 IP：
 
-### 数据库配置
-在 `backend/app/config/db_config.py` 中配置 MySQL 连接：
+```nginx
+server {
+    listen 80;
+    server_name your_domain_or_server_ip;
 
-```python
-# MySQL 配置
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": int(os.getenv("DB_PORT", "3306")),
-    "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASSWORD", ""),
-    "database": os.getenv("DB_NAME", "chatbot"),
+    root /opt/507_Agent/front/dist;
+    index index.html;
+
+    client_max_body_size 100m;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /user/ {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /file/ {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }
 ```
 
-### API Key 配置
-在 `.env` 文件中设置 DashScope API Key：
+启用配置：
 
-```env
-DASHSCOPE_API_KEY=your_dashscope_api_key
+```bash
+sudo ln -s /etc/nginx/sites-available/507-agent /etc/nginx/sites-enabled/507-agent
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
-### 模型配置
-在 `backend/app/config/rag.yaml` 中配置模型参数：
+浏览器访问：
 
-```yaml
-# 聊天模型名称
-chat_model_name: qwen3-max
-
-# 文本嵌入模型名称
-text_embedding_model_name: text-embedding-v4
+```text
+http://你的服务器IP
 ```
 
-### 向量数据库配置
-在 `backend/app/config/chroma.yaml` 中配置向量数据库参数：
+## 十一、HTTPS 配置
 
-```yaml
-# 向量数据库配置
-collection_name: rag_collection
-persist_directory: data/chromadb
-k: 3
+如果已经绑定域名，建议使用 Certbot：
 
-# 文件处理配置
-data_path: data
-md5_hex_store: data/md5_hex_store/md5_hex_store.txt
-allow_knowledge_file_types: ["txt", "pdf"]
-
-# 文档切分配置
-chunk_size: 200
-chunk_overlap: 20
-separators: ["\n\n", "\n", "。", "！", "？", "!", "?", " ", ""]
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d your_domain.com
 ```
 
-## 部署指南
+证书续期测试：
 
-详细的部署说明请参考：[部署指南](./docs/deployment.md)
+```bash
+sudo certbot renew --dry-run
+```
 
-## 开发指南
+## 十二、培养方案与知识库数据
 
-### 代码结构说明
-- **backend/app/rag/**：RAG 核心功能，包括向量存储和检索
-- **backend/app/agent/**：智能代理，处理用户请求和对话逻辑
-- **backend/app/services/**：业务服务层，提供会话管理等功能
-- **backend/app/utils/**：工具函数，包括配置加载、文件处理等
-- **front/src/views/**：前端页面组件
-- **front/src/components/**：可复用的前端组件
+当前项目支持从本地目录读取培养方案文件：
 
-### 开发流程
-1. **添加新功能**
-   - 在对应的模块中添加代码
-   - 运行测试确保功能正常
-   - 更新相关文档
-2. **调试技巧**
-   - 使用 FastAPI 的自动重载功能：`uvicorn main:app --reload`
-   - 使用 Vue 的热更新功能：`npm run dev`
+```text
+Training Program/
+```
 
-## 故障排除
+目录结构示例：
 
-详细的故障排除指南请参考：[故障排除](./docs/troubleshooting.md)
+```text
+Training Program/
+  地学院/
+    地质学培养方案.pdf
+  工程学院/
+    工程学院培养方案.pdf
+```
 
-## 文档
+前端“培养方案”页面会按学院展示文件列表。AI 问答要检索培养方案内容时，需要先将文件导入向量库。向量库默认生成在：
 
-项目文档位于 `docs/` 目录：
+```text
+backend/data/chromadb
+```
 
-- **[Hugging Face 模型配置](./docs/huggingface_model.md)**：详细的模型下载和配置说明
-- **[部署指南](./docs/deployment.md)**：生产环境部署详细步骤
-- **[故障排除](./docs/troubleshooting.md)**：常见问题和解决方案
-- **[API 文档](./backend/api.md)**：后端 API 接口文档
-- **[用户服务 API](./DjangoUserService/api.md)**：用户服务 API 文档
+`backend/data` 不建议提交到 GitHub，生产环境需要在服务器上重新导入或迁移数据目录。
 
-## 联系方式
+## 十三、常见问题
 
-如有任何问题或建议，请随时联系我们。😊
+### 1. 前端地图加载失败
+
+检查：
+
+- `front/.env.local` 是否配置了 `VITE_AMAP_KEY`
+- `front/.env.local` 是否配置了 `VITE_AMAP_SECURITY_CODE`
+- 修改后是否重新执行了 `npm run build`
+- 高德控制台里 JS API Key 的域名白名单是否包含你的域名
+
+### 2. 站内路线规划失败
+
+检查：
+
+- `backend/.env` 是否配置了 `AMAP_WEB_SERVICE_KEY`
+- 高德 Web 服务 Key 是否开通路径规划相关能力
+- 云服务器是否能访问 `https://restapi.amap.com`
+
+### 3. AI 问答无响应或报模型错误
+
+检查：
+
+- `backend/.env` 中 `ALIYUN_ACCESS_KEY_SECRET`
+- `backend/.env` 中 `DASHSCOPE_API_KEY`
+- DashScope 账号额度和模型权限
+- 后端日志：`sudo journalctl -u 507-agent-backend -f`
+
+### 4. 登录后仍显示未登录
+
+检查：
+
+- Django 用户服务是否运行在 `127.0.0.1:8001`
+- Nginx 是否正确代理 `/user/` 和 `/file/`
+- `backend/.env` 中 `DJANGO_API_URL` 是否正确
+- FastAPI 和 Django 使用的 JWT 密钥是否一致
+
+### 5. 上传文件或知识库导入失败
+
+检查：
+
+- Nginx `client_max_body_size`
+- `backend/data` 目录是否有写入权限
+- PDF / DOCX 文件是否可解析
+- DashScope embedding Key 是否有效
+
+## 十四、GitHub 上传注意事项
+
+不要上传以下文件或目录：
+
+- `.env`
+- `.env.local`
+- `.venv`
+- `node_modules`
+- `dist`
+- `backend/data`
+- `backend/logs`
+- `*.log`
+- 本地数据库文件
+
+当前仓库已提供：
+
+- `backend/.env.example`
+- `front/.env.example`
+- `DjangoUserService/.env.example`
+- `docs/github_setup.md`
+
+真实密码和 Key 只放在服务器本地 `.env` 文件中。
+
+## 十五、更新部署版本
+
+后续更新代码时：
+
+```bash
+cd /opt/507_Agent
+git pull origin version1.0
+
+cd backend
+uv sync
+cd ../DjangoUserService
+uv sync
+uv run python manage.py migrate
+cd ../front
+npm install
+npm run build
+
+sudo systemctl restart 507-agent-backend
+sudo systemctl restart 507-agent-user
+sudo systemctl reload nginx
+```
+
+## 十六、当前版本已实现功能
+
+- 用户登录、注册与登录状态处理
+- AI 智能问答与会话管理
+- RAG 知识库检索与来源反馈
+- 知识库文件上传、预览和管理
+- 培养方案文件列表与 AI 问答检索
+- 每周时间表、当天甘特图、AI 自动加入日程
+- 校园地图、地点搜索、站内路线规划
+- 未登录使用受限功能时的登录提示
