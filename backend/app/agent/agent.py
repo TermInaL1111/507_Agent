@@ -331,12 +331,27 @@ async def get_agent_stream_response(
                     logger.info(f"🛠️ [调用工具] {action.tool}")
                     logger.info(f"📥 [工具输入] {action.tool_input}")
                     logger.info(f"📤 [工具结果] {observation}\n")
-                    # 收集步骤
+
+                    tool_input_serializable = action.tool_input
+                    try:
+                        json.dumps(tool_input_serializable)
+                    except (TypeError, ValueError):
+                        tool_input_serializable = str(tool_input_serializable)
+
+                    tool_output_serializable = observation
+                    try:
+                        json.dumps(tool_output_serializable)
+                    except (TypeError, ValueError):
+                        tool_output_serializable = str(tool_output_serializable)
+
+                    yield f"data: {json.dumps({'type': 'tool_call', 'tool': action.tool, 'args': tool_input_serializable}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'tool_result', 'tool': action.tool, 'result': tool_output_serializable}, ensure_ascii=False)}\n\n"
+
                     steps.append({
                         "thought": action.log,
                         "tool": action.tool,
-                        "tool_input": action.tool_input,
-                        "tool_output": observation
+                        "tool_input": tool_input_serializable,
+                        "tool_output": tool_output_serializable,
                     })
 
         response = "".join(full_response) if full_response else "抱歉，我无法理解您的请求。"
@@ -355,8 +370,8 @@ async def get_agent_stream_response(
         await sm.session_manager.add_message(session_id, user_id, query, response)
         logger.info(f"【Agent流式响应】添加到会话历史成功")
 
-        # 发送结束标记
-        yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': sources}, ensure_ascii=False)}\n\n"
+        # 发送结束标记（附带工具调用步骤）
+        yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': sources, 'steps': steps}, ensure_ascii=False)}\n\n"
         logger.info(f"【Agent流式响应】处理完成，会话ID: {session_id}")
     except Exception as e:
         logger.error(f"【Agent流式响应】处理请求失败: {e}", exc_info=True)
