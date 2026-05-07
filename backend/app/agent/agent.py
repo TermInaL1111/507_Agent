@@ -1,4 +1,4 @@
-﻿import os
+import os
 import json
 import asyncio
 from langsmith import traceable
@@ -11,8 +11,21 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import BaseTool
 
 from app.agent.agent_middleware import get_middleware
-from app.agent.agent_tools import rag_summary_tools, get_weather_tools, what_time_is_now, get_user_info_tools, \
-    reorder_documents_tools
+from app.agent.agent_tools import (
+    create_schedule_event,
+    get_campus_route,
+    get_schedule_today,
+    get_schedule_week,
+    get_training_program,
+    get_user_info_tools,
+    get_weather_tools,
+    rag_summary_tools,
+    recommend_courses,
+    reorder_documents_tools,
+    search_campus_locations_tool,
+    set_agent_user_context,
+    what_time_is_now,
+)
 from app.core.logger_handler import logger
 from app.db.db_config import AsyncSessionLocal
 from app.rag.rag_service import RagService
@@ -62,6 +75,13 @@ class AgentFactory:
             what_time_is_now,
             get_user_info_tools,
             reorder_documents_tools,
+            get_schedule_week,
+            get_schedule_today,
+            create_schedule_event,
+            search_campus_locations_tool,
+            get_campus_route,
+            get_training_program,
+            recommend_courses,
         ]
 
     def _get_default_middleware(self) -> List:
@@ -165,6 +185,9 @@ async def get_agent_response(
         # 1. 从工厂获取全新的 Executor 实例
         agent_executor = agent_factory.create_agent_executor(custom_tools=custom_tools, **kwargs)
 
+        # 注入用户上下文（供工具访问）
+        set_agent_user_context(kwargs.get("user_id", ""))
+
         # 2. 构建聊天历史
         chat_history: List[BaseMessage] = []
         if history:
@@ -229,6 +252,8 @@ async def get_agent_stream_response(
     """
     try:
         logger.info(f"【Agent流式响应】开始处理请求，用户ID: {user_id}, 会话ID: {session_id}, 查询: {query}")
+
+        set_agent_user_context(user_id)
 
         # 获取会话历史
         history = await sm.session_manager.get_history(session_id, user_id)
