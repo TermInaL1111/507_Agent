@@ -6,17 +6,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     default-libmysqlclient-dev \
     pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+    && rm -rf /var/lib/apt/lists/* \
+    && pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
+    && pip install uv
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev --index-url https://mirrors.aliyun.com/pypi/simple/
 
 COPY . .
 

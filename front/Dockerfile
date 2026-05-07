@@ -8,7 +8,7 @@ ENV VITE_AMAP_KEY=$VITE_AMAP_KEY
 ENV VITE_AMAP_SECURITY_CODE=$VITE_AMAP_SECURITY_CODE
 
 COPY package*.json ./
-RUN npm ci
+RUN npm config set registry https://registry.npmmirror.com && npm ci
 
 COPY . .
 RUN npm run build
