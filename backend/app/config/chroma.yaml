@@ -1,0 +1,17 @@
+collection_name: rag_collection
+persist_directory: data/chromadb
+k: 20
+fetch_k: 50
+data_path: data
+md5_hex_store: data/md5_hex_store/md5_hex_store.txt
+allow_knowledge_file_types: ["txt", "pdf", "md", "pptx", "docx"]
+
+chunk_size: 800
+chunk_overlap: 120
+split_by_article: true
+separators: ["\n\n", "\n", "。", "；", "，", "!", "?", " ", ""]
+
+reranker:
+  enabled: false
+  model: BAAI/bge-reranker-v2-m3
+  fallback_on_error: true

@@ -1,0 +1,29 @@
+{
+  "name": "ai-assistant-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "@amap/amap-jsapi-loader": "^1.0.1",
+    "axios": "^1.12.2",
+    "dompurify": "^3.2.7",
+    "element-plus": "^2.5.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^16.3.0",
+    "marked-highlight": "^2.2.3",
+    "pinia": "^3.0.3",
+    "pinia-plugin-persistedstate": "^4.5.0",
+    "vue-i18n": "^9.8.0",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.1.6"
+  }
+}
