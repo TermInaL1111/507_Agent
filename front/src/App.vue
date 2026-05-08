@@ -17,52 +17,22 @@
       >
         <el-menu-item index="/aichat">
           <el-icon><ChatDotRound /></el-icon>
-          <span>AI问答</span>
+          <span>AI 对话</span>
         </el-menu-item>
-        
+
         <el-menu-item index="/sessions">
           <el-icon><ChatLineSquare /></el-icon>
-          <span>会话管理</span>
+          <span>会话记录</span>
         </el-menu-item>
 
-        <el-menu-item index="/schedule">
-          <el-icon><Calendar /></el-icon>
-          <span>课表服务</span>
-        </el-menu-item>
-
-        <el-menu-item index="/course-plan">
-          <el-icon><Reading /></el-icon>
-          <span>培养方案</span>
-        </el-menu-item>
-
-        <el-menu-item index="/course-recommend">
-          <el-icon><Notebook /></el-icon>
-          <span>选课建议</span>
-        </el-menu-item>
-
-        <el-menu-item index="/campus-map">
-          <el-icon><Location /></el-icon>
-          <span>校园导航</span>
-        </el-menu-item>
-
-        <el-menu-item index="/document-assistant">
-          <el-icon><Document /></el-icon>
-          <span>文书辅助</span>
-        </el-menu-item>
-
-        <el-menu-item index="/knowledge-manage">
-          <el-icon><Collection /></el-icon>
-          <span>知识库管理</span>
-        </el-menu-item>
-        
         <el-menu-item index="/profile">
           <el-icon><User /></el-icon>
           <span>个人中心</span>
         </el-menu-item>
-        
+
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon>
-          <span>系统设置</span>
+          <span>设置</span>
         </el-menu-item>
       </el-menu>
       
