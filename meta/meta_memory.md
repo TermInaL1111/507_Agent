@@ -4,6 +4,10 @@
 ## LAST UPDATE: 2026-05-08 20:20 CST
 ## PROGRESS: 95% → target 100% (仅剩弱网测试和可选项)
 
+### 工作规则
+- **每完成一个阶段/子任务，必须 `git commit` + `git push` 到 GitHub `agent-centric` 分支。** 不允许积攒多个阶段一起提交。
+- Commit message 格式：`feat: <阶段描述>` 或 `fix: <修复描述>`
+
 ---
 
 # 1. FINAL GOAL

@@ -16,6 +16,8 @@ from app.services.campus_location_service import (
     search_campus_locations as cl_search,
 )
 from app.services.schedule_ai_service import parse_schedule_items_from_text
+from app.schemas.leave import CourseLeaveRequest, LongLeaveRequest
+from app.services.leave_service import generate_leave_docx
 from app.services.schedule_service import (
     create_event as svc_create_event,
     find_conflicts as svc_find_conflicts,
@@ -228,3 +230,116 @@ async def recommend_courses(strategy: str = "全面发展") -> str:
     except Exception as e:
         logger.warning(f"选课推荐失败: {e}")
         return f"生成选课推荐时出现错误，请稍后重试。"
+
+
+# ── Leave request tool ───────────────────────────────────────────
+
+_TEMP_DIR = "/tmp/leave_docx"
+
+
+@tool(description="""生成请假条 Word 文档并返回下载链接。
+
+两种类型：
+- course_leave: 课程请假（单次课请假），需要 recipient_type("teacher"交给任课老师 或 "student_affairs"学工组备案)、teacher_name(老师姓名，仅teacher类型)、class_name(班级)、student_name(姓名)、student_id(学号)、reason(请假原因)、duration_days(请假天数)、start_date(开始日期如2026年5月10日)、start_time(开始时间如8时)、end_date(结束日期)、end_time(结束时间)、student_phone(本人电话)、parent_phone(家长电话)、signature(签名)、sign_date(签字日期)
+- long_leave: 长假期请假（多天离校），需要 student_name(姓名)、student_id(学号)、class_name(班号)、phone(离校期间电话)、parent_relation(亲属关系如父亲/母亲)、parent_phone(亲属电话)、leave_start(离校时间如2026年5月10日8时)、leave_end(返校时间)、total_days(共几天)、reason(请假原因)、destination(去向地址)、signature(签字)、sign_date(签字日期)
+
+尽量从对话中提取信息填入参数，缺失的必填字段在返回中提醒用户补充。""")
+async def generate_leave_request(
+    leave_type: str = "course_leave",
+    # 课程请假字段
+    recipient_type: str = "teacher",
+    teacher_name: str = "",
+    class_name: str = "",
+    student_name: str = "",
+    student_id: str = "",
+    reason: str = "",
+    duration_days: str = "",
+    start_date: str = "",
+    start_time: str = "",
+    end_date: str = "",
+    end_time: str = "",
+    student_phone: str = "",
+    parent_phone: str = "",
+    signature: str = "",
+    sign_date: str = "",
+    # 长假期请假字段
+    phone: str = "",
+    parent_relation: str = "",
+    parent_phone_long: str = "",
+    leave_start: str = "",
+    leave_end: str = "",
+    total_days: str = "",
+    destination: str = "",
+) -> str:
+    import uuid
+    from pathlib import Path
+
+    Path(_TEMP_DIR).mkdir(parents=True, exist_ok=True)
+
+    try:
+        if leave_type == "course_leave":
+            req = CourseLeaveRequest(
+                recipient_type=recipient_type,
+                teacher_name=teacher_name,
+                class_name=class_name,
+                student_name=student_name,
+                student_id=student_id,
+                reason=reason,
+                duration_days=duration_days,
+                start_date=start_date,
+                start_time=start_time,
+                end_date=end_date,
+                end_time=end_time,
+                student_phone=student_phone,
+                parent_phone=parent_phone,
+                signature=signature,
+                sign_date=sign_date,
+            )
+        else:
+            req = LongLeaveRequest(
+                student_name=student_name,
+                student_id=student_id,
+                class_name=class_name,
+                phone=phone,
+                parent_relation=parent_relation,
+                parent_phone=parent_phone_long or parent_phone,
+                leave_start=leave_start,
+                leave_end=leave_end,
+                total_days=total_days,
+                reason=reason,
+                destination=destination,
+                signature=signature,
+                sign_date=sign_date,
+            )
+
+        buf, filename = generate_leave_docx(leave_type, req if leave_type == "course_leave" else None, req if leave_type == "long_leave" else None)
+
+        file_id = uuid.uuid4().hex[:12]
+        file_path = Path(_TEMP_DIR) / f"{file_id}.docx"
+        file_path.write_bytes(buf.getvalue())
+
+        download_url = f"/api/leave/download/{file_id}"
+
+        # 检查缺失字段
+        missing = []
+        if leave_type == "course_leave":
+            if not student_name: missing.append("姓名")
+            if not student_id: missing.append("学号")
+            if not class_name: missing.append("班级")
+            if not reason: missing.append("请假原因")
+            if not start_date: missing.append("开始日期")
+        else:
+            if not student_name: missing.append("姓名")
+            if not student_id: missing.append("学号")
+            if not reason: missing.append("请假原因")
+            if not leave_start: missing.append("离校时间")
+
+        hint = ""
+        if missing:
+            hint = f"\n\n⚠ 以下信息缺失，已留空：{'、'.join(missing)}。你可以[点击打开表单页面](/leave-request)补充完整后重新生成。"
+
+        return f"✅ 请假条已生成：[下载 {filename}]({download_url}){hint}"
+
+    except Exception as e:
+        logger.error(f"【请假条生成】Agent 工具异常: {e}")
+        return f"生成请假条时出现错误：{str(e)}"
