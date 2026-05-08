@@ -132,26 +132,52 @@
         </div>
       </div>
       
-      <div class="input-container">
-        <el-input
-          v-model="userInput"
-          type="textarea"
-          :rows="3"
-          placeholder="请输入问题..."
-          class="chat-input"
-          resize="none"
-          @keydown.enter.prevent="handleEnter"
-        />
-        <el-button 
-          type="primary" 
-          size="large"
-          class="send-button" 
-          :disabled="isLoading || !userInput.trim()" 
-          @click="sendMessage"
-        >
-          <el-icon><Promotion /></el-icon>
-          发送
-        </el-button>
+      <div class="input-area">
+        <div v-if="pendingFiles.length" class="file-chips">
+          <el-tag
+            v-for="(f, idx) in pendingFiles"
+            :key="idx"
+            closable
+            size="small"
+            type="info"
+            @close="removeFile(idx)"
+          >
+            {{ f.name }}
+          </el-tag>
+        </div>
+        <div class="input-container">
+          <el-upload
+            ref="uploadRef"
+            :auto-upload="false"
+            :show-file-list="false"
+            :limit="3"
+            accept=".pdf,.docx,.txt"
+            @change="onFileChange"
+          >
+            <el-button :disabled="isLoading" size="large" circle>
+              <el-icon><Link /></el-icon>
+            </el-button>
+          </el-upload>
+          <el-input
+            v-model="userInput"
+            type="textarea"
+            :rows="3"
+            placeholder="输入问题或上传课表 PDF..."
+            class="chat-input"
+            resize="none"
+            @keydown.enter.prevent="handleEnter"
+          />
+          <el-button
+            type="primary"
+            size="large"
+            class="send-button"
+            :disabled="isLoading || (!userInput.trim() && !pendingFiles.length)"
+            @click="sendMessage"
+          >
+            <el-icon><Promotion /></el-icon>
+            发送
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -180,7 +206,7 @@
 import { computed, ref, onMounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { User, ChatDotRound, ChatLineSquare, Promotion } from '@element-plus/icons-vue';
+import { Link, User, ChatDotRound, ChatLineSquare, Promotion } from '@element-plus/icons-vue';
 import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
@@ -211,6 +237,8 @@ const hasJumped = ref(false);
 const sourceDialogVisible = ref(false);
 const selectedSource = ref(null);
 const isDownloadingSource = ref(false);
+const pendingFiles = ref([]);
+const uploadRef = ref(null);
 
 const canDownloadSelectedSource = computed(() => {
   if (!selectedSource.value) return false;
@@ -609,6 +637,49 @@ const downloadSelectedSource = async () => {
   }
 };
 
+// 文件选择
+const onFileChange = (uploadFile) => {
+  if (!uploadFile || !uploadFile.raw) return;
+  const file = uploadFile.raw;
+  const allowed = ['.pdf', '.docx', '.txt'];
+  const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  if (!allowed.includes(ext)) {
+    ElMessage.warning('仅支持 PDF、DOCX、TXT 文件');
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.warning('文件大小不能超过 20MB');
+    return;
+  }
+  if (pendingFiles.value.length >= 3) {
+    ElMessage.warning('最多上传 3 个文件');
+    return;
+  }
+  pendingFiles.value.push(file);
+  uploadRef.value?.clearFiles();
+};
+
+const removeFile = (idx) => {
+  pendingFiles.value.splice(idx, 1);
+};
+
+const uploadSingleFile = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const token = userStore.getToken;
+  const resp = await fetch('/api/agent/upload', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.detail || `上传失败 (${resp.status})`);
+  }
+  const json = await resp.json();
+  return json.data || json;
+};
+
 // 处理回车键发送
 const handleEnter = (e) => {
   if (!e.shiftKey) {
@@ -618,18 +689,39 @@ const handleEnter = (e) => {
 
 // 发送消息
 const sendMessage = async () => {
-  if (!userInput.value.trim() || isLoading.value) return;
-  
-  // 检查是否登录
-  if (!requireLogin()) {
-    return;
+  const hasText = userInput.value.trim();
+  const hasFiles = pendingFiles.value.length > 0;
+  if ((!hasText && !hasFiles) || isLoading.value) return;
+  if (!requireLogin()) return;
+
+  isLoading.value = true;
+
+  // 先上传文件
+  let fileContext = '';
+  if (hasFiles) {
+    try {
+      for (const file of pendingFiles.value) {
+        const result = await uploadSingleFile(file);
+        if (result.events_count > 0) {
+          fileContext += `\n📎 已从「${file.name}」导入 ${result.events_count} 条课表。`;
+        } else {
+          fileContext += `\n📎 已上传「${file.name}」${result.warning ? '（' + result.warning + '）' : ''}。`;
+        }
+      }
+      pendingFiles.value = [];
+      uploadRef.value?.clearFiles();
+    } catch (e) {
+      ElMessage.error(`文件上传失败: ${e.message}`);
+      isLoading.value = false;
+      return;
+    }
   }
-  
-  // 添加用户消息
-  const userMessage = userInput.value.trim();
-  messages.value.push({ role: 'user', content: userMessage });
+
+  const userMessage = (userInput.value.trim() || '查看我的课表') + fileContext;
   userInput.value = '';
-  
+
+  // 添加用户消息
+  messages.value.push({ role: 'user', content: userMessage });
   // 添加AI消息占位
   messages.value.push({ role: 'assistant', content: '', sources: [], resultCard: null });
   
@@ -1164,6 +1256,20 @@ const loadSessionHistory = (session) => {
 .source-download-tip {
   color: #e6a23c;
   font-size: 12px;
+}
+
+.input-area {
+  display: flex;
+  flex-direction: column;
+}
+
+.file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 20px 0 20px;
+  background-color: #fff;
+  border-radius: 8px 8px 0 0;
 }
 
 .input-container {
