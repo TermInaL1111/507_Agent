@@ -1,8 +1,8 @@
 # META MEMORY — AUTO RESEARCH AGENT
-## STATUS: Running — Agent-Centric Transformation v1
+## STATUS: Paused — Awaiting Phase 3 (Docker deploy + 5-scenario verify)
 ## START TIME: 2026-05-08 14:00 CST
-## LAST UPDATE: 2026-05-08 22:30 CST
-## PROGRESS: 60% → target 100%
+## LAST UPDATE: 2026-05-08 23:00 CST
+## PROGRESS: 85% → target 100%
 
 ---
 
@@ -63,19 +63,20 @@
 - [x] 1c. PDF 课表解析上传端点 `POST /api/agent/upload` (`chat.py`)
 - [x] 1d. 重写 System Prompt 覆盖全部 12 个工具 (`main_prompt.txt`)
 
-## Phase 2: 前端 Agent 中心改造 ✅ PROGRESS 75%
+## Phase 2: 前端 Agent 中心改造 ✅ COMPLETED 100%
 
 - [x] 2a. 精简侧边栏 10→4 菜单 (`App.vue`)
 - [x] 2b. 聊天框文件上传按钮 + 文件 chip (`AIChat.vue`)
 - [x] 2c. 工具调用可视化 — `tool_call`/`tool_result` 芯片动画 (`AIChat.vue`)
-- [ ] 2d. schedule 卡片渲染 — 课表网格/时间线 (IN PROGRESS)
+- [x] 2d. schedule 卡片渲染 — 时间线列表 + 周网格视图 + 冲突红标 (`AIChat.vue`)
 
 ## Phase 3: 构建部署 + 5 场景验证 ⏳ PENDING
 
-- [ ] 3a. Docker Compose 构建 (backend + frontend)
-- [ ] 3b. 部署到阿里云 ECS
+- [ ] 3a. Docker Compose 构建 (backend + frontend 镜像)
+- [ ] 3b. 部署到阿里云 ECS (8.137.19.10)
 - [ ] 3c. 场景 A-E 逐项验证
 - [ ] 3d. 回归测试 (登录/注册/RAG/会话)
+- [ ] 3e. 性能测试 (首字节 < 5s, 50并发不崩溃)
 
 ---
 
@@ -187,12 +188,11 @@ SSE Events (新增类型):
 
 # 8. TODO LIST (AUTONOMOUS)
 
-- [ ] Phase 2d: 完成 schedule 卡片渲染 (AIChat.vue)
-- [ ] 更新 `root/jgwd.md` SAD 文档 — 用例状态从"规划中"更新为"已实现"
+- [x] Phase 2d: 完成 schedule 卡片渲染 (AIChat.vue)
+- [x] 更新 `root/jgwd.md` SAD 文档 — 用例状态从"规划中"更新为"已实现"
 - [ ] Phase 3a: Docker Compose 重建 (backend + frontend 镜像)
-- [ ] Phase 3b: 推送 `agent-centric` 分支到 GitHub
-- [ ] Phase 3c: 场景 A-E 验证测试
-- [ ] Phase 3d: 性能测试 (响应时间、并发)
+- [ ] Phase 3b: 场景 A-E 验证测试
+- [ ] Phase 3c: 性能测试 (响应时间、并发)
 - [ ] 可选: 添加 schedule 卡片的 result_card 传递链路 (backend → Agent → frontend)
 - [ ] 可选: 安装 `gh` CLI 简化 GitHub 操作
 
@@ -200,8 +200,5 @@ SSE Events (新增类型):
 
 # 9. NEXT STEP (AUTONOMOUS DECIDED)
 
-→ 继续 Phase 2d: 在 AIChat.vue 的 `normalizeResultCard` 中新增 `schedule` 类型，渲染时间线列表和周网格视图。
-
-然后更新 `root/jgwd.md` 的 5.1 功能需求映射表，将所有"规划中"的用例 (UC-03~UC-08) 更新为"已实现"或"部分实现"。
-
-最后执行 Phase 3: `docker compose up -d --build` 重建部署，运行 5 场景验证。
+→ Phase 3: 在阿里云 ECS 上执行 `docker compose up -d --build` 重建部署，
+运行 5 场景验证（查课表/上传PDF/导航/培养方案/选课建议），逐项记录结果并更新 meta_memory。
