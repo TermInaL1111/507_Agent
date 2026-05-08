@@ -1,8 +1,8 @@
 # META MEMORY — AUTO RESEARCH AGENT
-## STATUS: Phase 3 Completed — 5/5 scenarios verified ✅
+## STATUS: Phase 4 Completed — UC-09 请假条生成 ✅
 ## START TIME: 2026-05-08 14:00 CST
-## LAST UPDATE: 2026-05-08 20:20 CST
-## PROGRESS: 95% → target 100% (仅剩弱网测试和可选项)
+## LAST UPDATE: 2026-05-08 23:20 CST
+## PROGRESS: 98% → target 100% (仅剩弱网测试)
 
 ### 工作规则
 - **每完成一个阶段/子任务，必须 `git commit` + `git push` 到 GitHub `agent-centric` 分支。** 不允许积攒多个阶段一起提交。
@@ -26,7 +26,7 @@
 | UC-06 | 课程规划 (培养方案检索) | ✅ 已实现 (RAG + Agent 工具) |
 | UC-07 | 选课建议 (多策略) | ✅ 已实现 (Agent 工具 recommend_courses) |
 | UC-08 | 校园导航 (地点检索 + 路线规划) | ✅ 已实现 (campus_ai_service + Agent 工具) |
-| UC-09 | 文书辅助 (生成/检查) | 🟡 部分实现 (Agent 生成可用，模板待完善) |
+| UC-09 | 文书辅助 (请假条 docx 生成) | ✅ 已实现 (API + Agent 工具 + 前端表单 + 2种模板) |
 | UC-10 | 管理员运维 (日志/限流/监控) | 🟡 部分实现 (Redis 限流 + 日志治理) |
 
 ### 技术目标
@@ -204,6 +204,7 @@ SSE Events (新增类型):
 | T9 | `tool_call`/`tool_result` SSE 事件不触发 | agent.py `astream` 循环中 chunk 同时包含 `output` 和 `intermediate_steps`，`elif` 导致跳过后者的处理 | `elif` 改为独立的 `if`，两者独立处理 |
 | T10 | PDF 课表解析只识别 6/8 门课 | PDF 提取文本中 `选\n课备注` 被断行，`课备注:` 不以 `:` 或 `/` 开头导致续行合并不生效 | 改续行逻辑：不以星期/节次/实践/其他/*: 开头的行全视为续行 |
 | T11 | 前端 `VITE_AMAP_KEY` 未配置 | `docker build` 没用 `--build-arg` 传入 AMap key | 构建时显式传入 VITE_AMAP_KEY 和 VITE_AMAP_SECURITY_CODE |
+| T12 | Agent 查询返回 429，频繁触发退出登录 | 聊天接口限流 10/min 过严，429 被前端误当作 401 处理(旧代码) | 限流升至 100/min + 全局 200/min + 前端新增 429 专属提示 |
 
 ---
 
@@ -245,12 +246,24 @@ SSE Events (新增类型):
 - [x] PDF 课表解析器重写 (适配教务系统格式，修复合并续行逻辑)
 - [x] 前端上传进度指示 + 成功提示
 - [x] 前端 AMap key 配置修复
-- [ ] UC-09 请假条生成 (2种类型: 课程请假 + 长假期请假)
+- [x] UC-09 请假条生成 (2种类型: 课程请假 + 长假期请假) ✅ 2026-05-08
 - [ ] 可选: 安装 `gh` CLI
 
 ---
 
-# 9. NEXT STEP (AUTONOMOUS DECIDED)
+# 9. PHASE 4 — UC-09 请假条生成 ✅
 
-→ 实现请假条生成功能（7 步），先做后端 4 步再前端 3 步。
-→ Commit & push 当前修复到 GitHub。
+### 实现概要 (2026-05-08)
+- **后端 4 文件**: schemas/leave.py, services/leave_service.py (python-docx), router/leave.py, agent_tools.py
+- **前端 3 文件**: LeaveRequest.vue, router/index.js, App.vue
+- **API**: `POST /api/leave/generate` → download_url; `GET /api/leave/download/{file_id}` → docx
+- **Agent 工具**: `generate_leave_request` — 从对话提取参数 + 自动补全 + 缺失字段提醒
+- **模板**: 课程请假（交给任课老师/学工组备案）+ 长假期请假（中国地质大学计算机学院长期请假手续单）
+- **部署**: Docker 重建 backend+frontend，新增 MYSQL_HOST/DJANGO_DB_HOST 修复容器间通信
+
+---
+
+# 10. NEXT STEP (AUTONOMOUS DECIDED)
+
+→ 弱网环境测试工具调用可视化体验。
+→ 如用户有新需求，优先处理。

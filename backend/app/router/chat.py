@@ -253,7 +253,7 @@ async def upload_schedule_pdf(
 async def query_stream(
         request: QueryRequest,
         user_id: str = Depends(get_current_user_id),
-        _: None = Depends(rate_limit(limit=10, window=60))
+        _: None = Depends(rate_limit(limit=100, window=60))
 ):
     """查询Agent流式响应"""
     # 如果没有提供session_id，自动生成一个

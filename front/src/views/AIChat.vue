@@ -870,6 +870,12 @@ const fetchAIResponse = async (userMessage) => {
         authError.authRequired = true;
         throw authError;
       }
+      if (response.status === 429) {
+        ElMessage.warning('请求太频繁，请稍等片刻再试');
+        const rateError = new Error('请求过于频繁，请等待几秒后再发送');
+        rateError.authRequired = false;
+        throw rateError;
+      }
       throw new Error(error.detail || `HTTP error! status: ${response.status}`);
     }
     

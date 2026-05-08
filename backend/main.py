@@ -29,7 +29,7 @@ load_dotenv()
 app = FastAPI()
 
 # 集成限流中间件
-app.add_middleware(RateLimitMiddleware, limit=100, window=60) # 每分钟100个请求
+app.add_middleware(RateLimitMiddleware, limit=200, window=60) # 每分钟100个请求
 
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
