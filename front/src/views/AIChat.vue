@@ -117,6 +117,18 @@
               </div>
             </div>
 
+            <div v-if="message.role === 'assistant' && message.toolCalls?.length" class="tool-calls">
+              <div
+                v-for="(tc, tcIdx) in message.toolCalls"
+                :key="`tc-${index}-${tcIdx}`"
+                class="tool-call-chip"
+                :class="{ 'tool-call--running': tc.status === 'running', 'tool-call--done': tc.status === 'done' }"
+              >
+                <span class="tool-call-icon">{{ tc.status === 'running' ? '⏳' : '✅' }}</span>
+                <span class="tool-call-label">{{ tc.tool }}</span>
+              </div>
+            </div>
+
             <div v-if="message.role === 'assistant' && message.sources?.length" class="message-sources">
               <button
                 v-for="(source, sourceIndex) in message.sources"
@@ -817,6 +829,25 @@ const fetchAIResponse = async (userMessage) => {
           switch (json.type) {
             case 'step':
               break;
+            case 'tool_call': {
+              const curMsg = messages.value[messages.value.length - 1];
+              if (curMsg && curMsg.role === 'assistant') {
+                if (!curMsg.toolCalls) curMsg.toolCalls = [];
+                curMsg.toolCalls.push({ tool: json.tool, args: json.args, result: null, status: 'running' });
+              }
+              break;
+            }
+            case 'tool_result': {
+              const curMsg2 = messages.value[messages.value.length - 1];
+              if (curMsg2 && curMsg2.role === 'assistant' && curMsg2.toolCalls) {
+                const running = curMsg2.toolCalls.filter(tc => tc.status === 'running');
+                if (running.length) {
+                  running[0].result = json.result;
+                  running[0].status = 'done';
+                }
+              }
+              break;
+            }
             case 'response':
               let content = '';
 
@@ -861,6 +892,19 @@ const fetchAIResponse = async (userMessage) => {
             case 'done':
               updateAssistantSources(json);
               updateAssistantResultCard(json);
+
+              // 如果 steps 存在且 toolCalls 为空，从 steps 填充
+              if (json.steps && json.steps.length) {
+                const lastMsg = messages.value[messages.value.length - 1];
+                if (lastMsg && lastMsg.role === 'assistant' && (!lastMsg.toolCalls || !lastMsg.toolCalls.length)) {
+                  lastMsg.toolCalls = json.steps.map(s => ({
+                    tool: s.tool,
+                    args: s.tool_input,
+                    result: s.tool_output,
+                    status: 'done',
+                  }));
+                }
+              }
 
               // 保存会话ID并在所有数据接收完成后跳转
               if (json.session_id && typeof json.session_id === 'string' && json.session_id.trim()) {
@@ -1188,6 +1232,54 @@ const loadSessionHistory = (session) => {
   font-size: 12px;
   color: #606266;
   margin-bottom: 4px;
+}
+
+.tool-calls {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-call-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid #dcdfe6;
+  background: #fafafa;
+}
+
+.tool-call-chip.tool-call--running {
+  background: #ecf5ff;
+  border-color: #a0cfff;
+  animation: pulse-border 1.5s ease-in-out infinite;
+}
+
+.tool-call-chip.tool-call--done {
+  background: #f0f9eb;
+  border-color: #b3e19d;
+}
+
+.tool-call-icon {
+  font-size: 12px;
+}
+
+.tool-call-label {
+  color: #606266;
+  font-family: monospace;
+  font-size: 11px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: #a0cfff; }
+  50% { border-color: #409eff; }
 }
 
 .message-sources {
