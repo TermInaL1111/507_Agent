@@ -1,30 +1,49 @@
-# 507 Agent v1.0 部署说明
+# 507 Agent (CampusAgent) — Agent-Centric 部署说明
 
-507 Agent 是一个面向校园场景的 AI 助手系统，当前版本包含 AI 问答、RAG 知识库、培养方案检索、时间表管理、校园导航、用户登录与会话管理等功能。
+507 Agent 是一个以 **AI Agent 对话为核心** 的校园智能助手平台。将传统菜单式 Web 应用改造为统一对话入口：用户通过自然语言即可触发课表查询、校园导航、培养方案检索、选课建议、文书辅助（请假条生成）等全部功能。
 
-推荐使用 Docker Compose 一键部署。传统手动部署说明保留在后文，便于排查或二次开发。
+当前活跃分支：`agent-centric`
 
 ## 一、系统组成
 
 | 服务 | 目录 | 容器端口 | 说明 |
 | --- | --- | --- | --- |
-| 前端服务 | `front` | `80` | Vue 3 构建后由 Nginx 托管 |
-| AI 后端服务 | `backend` | `8000` | FastAPI + LangChain + RAG |
-| 用户服务 | `DjangoUserService` | `8001` | Django 登录、注册、用户信息 |
-| MySQL | Docker volume | `3306` | 用户、会话、日程、文件索引 |
-| Redis | Docker volume | `6379` | 缓存、限流、用户信息缓存 |
+| 前端服务 | `front` | `80` | Vue 3 + Element Plus，Nginx 反代 |
+| AI 后端服务 | `backend` | `8000` | FastAPI + LangChain Agent (12 工具) + ChromaDB RAG |
+| 用户服务 | `DjangoUserService` | `8001` | Django 5.2 + DRF + SimpleJWT |
+| MySQL | — | `3306` | 用户、会话、日程、文件索引 |
+| Redis | — | `6379` | 缓存、限流、用户信息缓存 |
 
-## 二、Docker 一键部署
+### Agent 工具清单（13 个）
+
+| 工具 | 功能 |
+|------|------|
+| `rag_summary_tools` | RAG 知识库检索摘要 |
+| `get_weather_tools` | 天气查询 |
+| `what_time_is_now` | 当前时间 |
+| `get_user_info_tools` | 用户信息 |
+| `reorder_documents_tools` | 文档重排序 |
+| `get_schedule_week` | 整周课表查询 |
+| `get_schedule_today` | 今日课表查询 |
+| `create_schedule_event` | 创建日程事件 |
+| `search_campus_locations_tool` | 校园地点搜索 |
+| `get_campus_route` | 校园路线规划 |
+| `get_training_program` | 培养方案检索 |
+| `recommend_courses` | 选课建议 |
+| `generate_leave_request` | 请假条 Word 生成 |
+
+## 二、Docker 部署（完整步骤）
+
+以下步骤基于阿里云 ECS (Ubuntu 22.04, 4C4G) 实际部署验证。
 
 ### 1. 服务器要求
 
-推荐 Ubuntu 22.04 / 24.04：
-
 - CPU：2 核及以上
-- 内存：4 GB 及以上，若启用本地 reranker 建议 8 GB+
+- 内存：4 GB 及以上（前端构建时峰值内存约 2.5G，建议预留）
 - 磁盘：40 GB 及以上
 - Docker：24+
-- Docker Compose：v2+
+- Docker Compose：v2+（v1.29.2 不兼容 Docker 29.x）
+- Git
 
 安装 Docker：
 
@@ -32,8 +51,20 @@
 curl -fsSL https://get.docker.com | sudo bash
 sudo systemctl enable docker
 sudo systemctl start docker
-docker --version
-docker compose version
+docker --version          # 应 >= 24
+docker compose version    # 应 >= 2
+```
+
+国内服务器配置镜像加速（可选但推荐）：
+
+```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "registry-mirrors": ["https://mirror.ccs.tencentyun.com"]
+}
+EOF
+sudo systemctl restart docker
 ```
 
 ### 2. 获取代码
@@ -41,89 +72,172 @@ docker compose version
 ```bash
 git clone https://github.com/TermInaL1111/507_Agent.git
 cd 507_Agent
-git checkout version1.0
+git checkout agent-centric    # 当前主开发分支
 ```
 
-### 3. 创建 Docker 环境变量
+### 3. 配置环境变量
 
 ```bash
 cp .env.docker.example .env
-```
-
-编辑 `.env`：
-
-```bash
 nano .env
 ```
 
-至少需要替换这些值：
+**必须配置的核心变量：**
 
 ```env
-MYSQL_ROOT_PASSWORD=change-me-root-password
-MYSQL_PASSWORD=change-me-mysql-password
-DJANGO_DB_PASSWORD=change-me-mysql-password
+# ── 数据库 ──
+MYSQL_ROOT_PASSWORD=<强密码>
+MYSQL_DATABASE=chat_history
+MYSQL_USER=agent_user
+MYSQL_PASSWORD=<强密码>
+MYSQL_HOST=507-agent-mysql        # 容器名，手动 docker run 时需设置
 
-SECRET_KEY=change-me-shared-jwt-secret
-DJANGO_SECRET_KEY=change-me-django-secret
+DJANGO_DB_NAME=django_user_service
+DJANGO_DB_USER=agent_user
+DJANGO_DB_PASSWORD=<同上密码>
+DJANGO_DB_HOST=507-agent-mysql    # 容器名，手动 docker run 时需设置
 
-ALIYUN_ACCESS_KEY_SECRET=your_dashscope_api_key
-DASHSCOPE_API_KEY=your_dashscope_api_key
+# ── JWT ──（SECRET_KEY 和 DJANGO_SECRET_KEY 必须一致）
+SECRET_KEY=<随机生成64字符>
+DJANGO_SECRET_KEY=<与 SECRET_KEY 相同>
 
-AMAP_WEB_SERVICE_KEY=your_amap_web_service_key
-VITE_AMAP_KEY=your_amap_js_api_key
-VITE_AMAP_SECURITY_CODE=your_amap_security_js_code
+# ── DashScope API ──
+DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ALIYUN_ACCESS_KEY_SECRET=<与 DASHSCOPE_API_KEY 相同>
+
+# ── 高德地图 ──
+AMAP_WEB_SERVICE_KEY=<高德 Web 服务 Key>
+VITE_AMAP_KEY=<高德 JS API Key>
+VITE_AMAP_SECURITY_CODE=<高德安全密钥>
+
+# ── Redis ──
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_DB=3
+
+# ── Reranker ──（内存不足时建议跳过）
+SKIP_RERANKER_DOWNLOAD=true
 ```
 
-说明：
+> **关键**：`SECRET_KEY` 和 `DJANGO_SECRET_KEY` 必须一致，否则 FastAPI 无法解码 Django 签发的 JWT → 所有 `/api/*` 请求 401。
 
-- `VITE_AMAP_KEY` 和 `VITE_AMAP_SECURITY_CODE` 会进入前端构建产物。
-- 不要把数据库密码、DashScope Key、`AMAP_WEB_SERVICE_KEY` 放到前端环境变量。
-- 如果你暂时不想下载 reranker，保持 `SKIP_RERANKER_DOWNLOAD=true`。
+### 4. 构建与启动
 
-### 4. 一键启动
+#### 方式一：Docker Compose（推荐）
 
 ```bash
+# 构建并启动全部服务
 docker compose up -d --build
 ```
 
-首次构建会安装 Python、Node、前后端依赖，耗时较长。后端依赖包含 AI/RAG 相关包，云服务器内存太小时可能会比较吃力。
+首次构建耗时约 10-20 分钟（安装 Python/Node 依赖 + 构建前端）。
 
-查看容器：
+#### 方式二：手动 docker run（Compose 不可用时）
 
-```bash
-docker compose ps
-```
+当 docker-compose v1 不兼容 Docker 29.x 时，可手动创建容器。
 
-查看日志：
+**前置：创建 Docker 网络**
 
 ```bash
-docker compose logs -f backend
-docker compose logs -f django-user
-docker compose logs -f frontend
+docker network create zhsx_default
 ```
 
-访问系统：
-
-```text
-http://服务器IP
-```
-
-默认由 `frontend` 容器暴露 `80` 端口。若服务器 80 已被占用，修改 `.env`：
-
-```env
-FRONTEND_PORT=8080
-```
-
-然后重新启动：
+**Step 1 — MySQL**
 
 ```bash
-docker compose up -d
+docker run -d --name 507-agent-mysql \
+  --network zhsx_default \
+  --network-alias mysql \
+  -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
+  -e MYSQL_DATABASE="$MYSQL_DATABASE" \
+  -e MYSQL_USER="$MYSQL_USER" \
+  -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
+  -e MYSQL_ONETIME_PASSWORD="$MYSQL_ROOT_PASSWORD" \
+  -v mysql_data:/var/lib/mysql \
+  -p 3306:3306 \
+  mysql:8.4
 ```
 
-访问：
+> MySQL 8.4 需要 `MYSQL_ONETIME_PASSWORD` 环境变量。
 
-```text
-http://服务器IP:8080
+**Step 2 — Redis**
+
+```bash
+docker run -d --name 507-agent-redis \
+  --network zhsx_default \
+  --network-alias redis \
+  -v redis_data:/data \
+  -p 6379:6379 \
+  redis:7-alpine redis-server --appendonly yes
+```
+
+**Step 3 — Django 用户服务**
+
+```bash
+docker build -t zhsx_django-user -f DjangoUserService/Dockerfile DjangoUserService
+
+docker run -d --name 507-agent-django-user \
+  --network zhsx_default \
+  --network-alias django-user \
+  --env-file .env \
+  -v django_media:/app/media \
+  -p 8001:8001 \
+  zhsx_django-user
+```
+
+**Step 4 — FastAPI 后端**
+
+```bash
+docker build -t 507-backend -f backend/Dockerfile backend
+
+docker run -d --name 507-agent-backend \
+  --network zhsx_default \
+  --network-alias backend \
+  --env-file .env \
+  -v "$(pwd)/Training Program:/app/Training Program:ro" \
+  -v backend_data:/app/data \
+  -p 8000:8000 \
+  507-backend
+```
+
+**Step 5 — 前端（Vue 3 + Nginx）**
+
+```bash
+# 从 .env 导出 VITE_ 变量用于构建时注入
+export $(grep -E '^VITE_' .env | xargs)
+
+docker build \
+  --build-arg VITE_AMAP_KEY="$VITE_AMAP_KEY" \
+  --build-arg VITE_AMAP_SECURITY_CODE="$VITE_AMAP_SECURITY_CODE" \
+  -t 507-frontend -f front/Dockerfile front
+
+docker run -d --name 507-agent-frontend \
+  --network zhsx_default \
+  -p 80:80 \
+  507-frontend
+```
+
+> **重要**：`VITE_AMAP_KEY` 和 `VITE_AMAP_SECURITY_CODE` 在构建时通过 `--build-arg` 注入。不传则前端地图无法加载。
+
+**Step 6 — 验证**
+
+```bash
+docker ps --format '{{.Names}} {{.Status}}'
+
+# 验证各服务
+curl -s http://localhost:80/ | head -5       # 前端 HTML
+curl -s http://localhost:8000/               # {"message":"Hello World"}
+curl -s http://localhost:8001/               # Django
+```
+
+访问：`http://服务器IP`
+
+### 5. 查看日志
+
+```bash
+docker logs -f 507-agent-backend
+docker logs -f 507-agent-django-user
+docker logs -f 507-agent-frontend
 ```
 
 ## 三、Docker 服务说明
@@ -318,18 +432,90 @@ uv run python manage.py runserver 127.0.0.1:8001
 
 ## 七、当前版本已实现功能
 
-- 用户登录、注册与登录状态处理
-- AI 智能问答与会话管理
-- RAG 知识库检索与来源反馈
-- 知识库文件上传、预览和管理
-- 培养方案文件列表与 AI 问答检索
-- 每周时间表、当天甘特图、AI 自动加入日程
-- 校园地图、地点搜索、站内路线规划
-- 未登录使用受限功能时的登录提示
+| 用例 | 功能 | 触发方式 |
+|------|------|----------|
+| UC-01 | 用户注册/登录/注销/资料管理 | 独立页面 |
+| UC-02 | 校园知识问答（RAG + 引用来源） | Agent 对话 |
+| UC-03 | 统一智能体多轮对话 + SSE 流式 | Agent 对话 |
+| UC-04 | 知识库文档上传/向量化/重排 | 知识库管理页 |
+| UC-05 | 课表查询（今日/周）+ 冲突提醒 | Agent 对话 / 课表页 |
+| UC-06 | 课程规划（培养方案检索） | Agent 对话 / 培养方案页 |
+| UC-07 | 选课建议（多策略） | Agent 对话 |
+| UC-08 | 校园导航（地点检索 + 路线规划） | Agent 对话 / 地图页 |
+| UC-09 | 文书辅助（请假条 docx 生成） | Agent 对话 / 文书辅助页 |
+| UC-10 | 管理员运维（Redis 限流 + 日志） | 后台自动 |
 
-## 八、GitHub 上传注意事项
+**SSE 事件类型**：`response` | `tool_call` | `tool_result` | `sources` | `done` | `error`
 
-不要上传以下文件或目录：
+**前端特性**：
+- 工具调用可视化（tool_call/tool_result 芯片动画）
+- 文件上传联动（PDF 课表 → 自动解析 → 创建日程 → 对话展示）
+- Markdown 渲染（marked + highlight.js + DOMPurify）
+- Schedule 卡片渲染（时间线列表 + 周网格视图 + 冲突红标）
+
+## 八、常见故障排查
+
+### 401 Unauthorized
+- 检查 `.env` 中 `SECRET_KEY` 和 `DJANGO_SECRET_KEY` 是否一致
+- 重新登录获取新 token
+
+### MySQL 连接失败 `Can't connect to MySQL server on 'localhost'`
+- `.env` 中必须设置 `MYSQL_HOST` 和 `DJANGO_DB_HOST` 为 MySQL 容器名
+- 确认 MySQL 容器在同一 Docker 网络中
+
+### Nginx 启动失败 `host not found in upstream "backend"`
+- 确保 backend/django 容器创建时带了 `--network-alias backend` / `--network-alias django-user`
+- 运行 `docker network inspect zhsx_default` 确认所有容器在同一网络
+
+### 前端高德地图不加载
+- 构建时是否传入了 `--build-arg VITE_AMAP_KEY=...`
+- 浏览器控制台查看是否正确加载 AMap JS API
+
+### 内存不足（前端构建 OOM）
+```bash
+# 临时停止非必要容器释放内存
+docker stop 507-agent-backend 507-agent-django-user
+# 构建完成后重启
+docker start 507-agent-backend 507-agent-django-user
+```
+
+### Agent 工具调用不显示（tool_call/tool_result 不触发）
+- 确认 `agent.py` 中 `astream` 循环的 `intermediate_steps` 处理使用 `if` 而非 `elif`
+- `chunk` 可能同时包含 `output` 和 `intermediate_steps`
+
+### ChromaDB 检索为空
+```bash
+# 导入培养方案 PDF 到向量库
+for f in "Training Program"/*.pdf; do
+  curl -X POST http://localhost:8000/api/training-program/import \
+    -H "Authorization: Bearer <token>"
+done
+```
+
+### 容器全部重建（保留数据卷）
+```bash
+docker stop 507-agent-frontend 507-agent-backend 507-agent-django-user
+docker rm 507-agent-frontend 507-agent-backend 507-agent-django-user
+# 重新构建镜像...
+# 重新 docker run...（数据卷 mysql_data/redis_data/backend_data 不受影响）
+```
+
+## 九、开发环境
+
+```bash
+# 后端
+cd backend && uv sync && uv run uvicorn main:app --port 8000 --reload
+
+# Django
+cd DjangoUserService && uv sync && uv run python manage.py migrate && uv run python manage.py runserver 127.0.0.1:8001
+
+# 前端
+cd front && npm install && npm run dev
+```
+
+## 十、GitHub 上传注意事项
+
+不要上传以下文件或目录（已配置 `.gitignore`）：
 
 - `.env`
 - `.env.local`
