@@ -20,6 +20,16 @@
           <span>AI 对话</span>
         </el-menu-item>
 
+        <el-menu-item index="/schedule">
+          <el-icon><Calendar /></el-icon>
+          <span>课表日程</span>
+        </el-menu-item>
+
+        <el-menu-item index="/campus-map">
+          <el-icon><MapLocation /></el-icon>
+          <span>校园导航</span>
+        </el-menu-item>
+
         <el-menu-item index="/sessions">
           <el-icon><ChatLineSquare /></el-icon>
           <span>会话记录</span>

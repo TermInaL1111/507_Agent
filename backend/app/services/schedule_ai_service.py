@@ -142,18 +142,22 @@ def _parse_date(text: str) -> tuple[str, str]:
 def _parse_time_ranges(text: str) -> list[dict]:
     period = r"(\u4e0a\u5348|\u65e9\u4e0a|\u4e2d\u5348|\u4e0b\u5348|\u665a\u4e0a|\u4eca\u665a|\u591c\u91cc|\u51cc\u6668)?"
     pattern = re.compile(
-        rf"{period}\s*(\d{{1,2}})\s*(?:[:\uff1a\u70b9]\s*(\d{{1,2}})?)?\s*"
+        rf"{period}\s*(\d{{1,2}})\s*(?:[:\uff1a\u70b9]\s*(\d{{1,2}})?\s*)?(\u534a)?\s*"
         rf"(?:\u5230|\u81f3|-|~|\u2014)\s*"
-        rf"{period}\s*(\d{{1,2}})\s*(?:[:\uff1a\u70b9]\s*(\d{{1,2}})?)?"
+        rf"{period}\s*(\d{{1,2}})\s*(?:[:\uff1a\u70b9]\s*(\d{{1,2}})?\s*)?(\u534a)?"
     )
     ranges = []
     for match in pattern.finditer(text):
         start = _parse_clock(match, 1, 2, 3)
-        end_period = match.group(4) or match.group(1) or ""
-        end_hour = _normalize_hour(int(match.group(5)), end_period)
-        end_minute = int(match.group(6) or 0)
+        if match.group(4):
+            start += 30
+        end_period = match.group(5) or match.group(1) or ""
+        end_hour = _normalize_hour(int(match.group(6)), end_period)
+        end_minute = int(match.group(7) or 0)
+        if match.group(8):
+            end_minute += 30
         end = end_hour * 60 + end_minute
-        if end <= start and not match.group(4) and (match.group(1) or "") in ("\u4e0b\u5348", "\u665a\u4e0a", "\u4eca\u665a", "\u591c\u91cc"):
+        if end <= start and not match.group(5) and (match.group(1) or "") in ("\u4e0b\u5348", "\u665a\u4e0a", "\u4eca\u665a", "\u591c\u91cc"):
             end += 12 * 60
         ranges.append({"start": start, "end": end, "span": match.span(), "text": match.group(0)})
     return ranges

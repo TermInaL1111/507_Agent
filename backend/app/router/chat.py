@@ -25,95 +25,137 @@ chat_router = APIRouter(prefix="/api", tags=["api"])
 
 # ── PDF 课表文本解析 ───────────────────────────────────────────
 
-_WEEKDAY_MAP = {
-    "星期一": "Monday", "周一": "Monday",
-    "星期二": "Tuesday", "周二": "Tuesday",
-    "星期三": "Wednesday", "周三": "Wednesday",
-    "星期四": "Thursday", "周四": "Thursday",
-    "星期五": "Friday", "周五": "Friday",
-    "星期六": "Saturday", "周六": "Saturday",
-    "星期日": "Sunday", "周七": "Sunday", "周天": "Sunday",
-    "Monday": "Monday", "Mon": "Monday",
-    "Tuesday": "Tuesday", "Tue": "Tuesday",
-    "Wednesday": "Wednesday", "Wed": "Wednesday",
-    "Thursday": "Thursday", "Thu": "Thursday",
-    "Friday": "Friday", "Fri": "Friday",
-    "Saturday": "Saturday", "Sat": "Saturday",
-    "Sunday": "Sunday", "Sun": "Sunday",
+# 节次 → 实际时间映射 (中国高校标准作息)
+_SECTION_TIMES = {
+    ("1", "2"): ("08:00", "09:35"),
+    ("3", "4"): ("10:05", "11:40"),
+    ("5", "6"): ("14:00", "15:35"),
+    ("7", "8"): ("16:05", "17:40"),
+    ("9", "10"): ("19:00", "20:35"),
 }
 
-_TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[-~—至到]\s*(\d{1,2}:\d{2})")
-_WEEKDAY_RE = re.compile(
-    r"(星期[一二三四五六日天]|周[一二三四五六日天]|"
-    r"Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|"
-    r"Mon|Tue|Wed|Thu|Fri|Sat|Sun)"
+_WEEKDAY_NAMES = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+_WEEKDAY_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+# 课表条目正则: 节次范围 课程名 * 详细参数(/分隔的key:value)
+_COURSE_LINE_RE = re.compile(
+    r"(?<!\d)(\d{1,2})\s*-\s*(\d{1,2})\s+"  # 节次范围 (如 1-2, 前面不能有数字)
+    r"([^*]+?)"                               # 课程名 (到*之前)
+    r"\*\s*"                                  # * 分隔符
+    r"(.+?)"                                  # 详细参数
+    r"(?=\n?\d{1,2}\s*-\s*\d{1,2}\s+|$)"     # 截止于下一门课或行尾
 )
-_LOCATION_RE = re.compile(r"([一-龥A-Za-z]+(?:楼|馆|厅|室|区|堂|中心)\S{0,6})")
+
+# 详情字段 key:value 解析
+_DETAIL_KV_RE = re.compile(r"\s*/?\s*([^:：/]+)[:：]\s*([^/]*)")
+
+
+def _section_to_time(section_start: str, section_end: str) -> tuple[str, str]:
+    """节次号 → 实际时间，未知节次按递推估算。"""
+    key = (section_start, section_end)
+    if key in _SECTION_TIMES:
+        return _SECTION_TIMES[key]
+    s, e = int(section_start), int(section_end)
+    if s >= 9:
+        return (f"{18 + (s - 9) // 2:02d}:00", f"{18 + (e - 9) // 2:02d}:35")
+    if s >= 5:
+        return (f"{13 + s // 2:02d}:00", f"{13 + e // 2:02d}:35")
+    return (f"{7 + s // 2:02d}:00", f"{7 + e // 2:02d}:35")
+
+
+def _parse_detail_fields(detail_str: str) -> dict:
+    """解析 '周数: 1-6周/校区: 未来城校区/地点: 公教2-304/教师: 万波/...' → dict"""
+    fields = {}
+    for m in _DETAIL_KV_RE.finditer(detail_str):
+        key = m.group(1).strip()
+        value = m.group(2).strip().rstrip("/")
+        fields[key] = value
+    return fields
 
 
 def _parse_schedule_pdf_text(text: str) -> tuple[list[dict], str]:
-    """从 PDF 提取的文本中解析课表条目。
-    返回 (items, warning)，items 每项含 weekday/startTime/endTime/title/location。"""
-    lines = [line.strip() for line in text.split("\n") if line.strip()]
-    if not lines:
-        return [], "PDF 文本为空，可能是扫描版图片 PDF，建议手动输入课表。"
-
+    """解析教务系统导出的课表文本。
+    支持格式: 星期X 节次 课程名*周数:.../校区:.../地点:.../教师:...
+    """
     items: list[dict] = []
-    current_weekday = ""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    for line in lines:
-        wd_match = _WEEKDAY_RE.match(line)
-        if wd_match and len(line) <= 10:
-            current_weekday = _WEEKDAY_MAP.get(wd_match.group(1), "")
+    # ── 预处理: 合并续行 ──
+    # PDF 提取的文本中，长字段可能被切成多行
+    # 续行特征: 以 : 或 / 开头，或者不以星期/节次数字开头且当前在课程条目内
+    raw_lines = text.split("\n")
+    merged: list[str] = []
+    for line in raw_lines:
+        stripped = line.strip()
+        if not stripped:
             continue
+        if merged and (stripped.startswith(":") or stripped.startswith("/")):
+            merged[-1] = merged[-1] + stripped
+        else:
+            merged.append(stripped)
 
-        time_match = _TIME_RANGE_RE.search(line)
-        if not time_match:
-            continue
+    # ── 按星期拆分 ──
+    WEEKDAY_PATTERN = re.compile(
+        r"^(星期[一二三四五六日])(?:\s+\d|\s*$|\s*\*)"  # 星期X 后跟空格+数字 或 行尾
+    )
+    _WD_START = re.compile(r"^(星期[一二三四五六日])")
 
-        start_time = time_match.group(1)
-        end_time = time_match.group(2)
-        after_time = line[time_match.end():].strip()
-        before_time = line[:time_match.start()].strip()
+    day_blocks: dict[str, str] = {}
+    current_day = ""
+    current_lines: list[str] = []
 
-        # 尝试从行首提取星期
-        line_weekday = current_weekday
-        if before_time:
-            wd_at_start = _WEEKDAY_RE.match(before_time)
-            if wd_at_start:
-                line_weekday = _WEEKDAY_MAP.get(wd_at_start.group(1), current_weekday)
-                before_time = before_time[wd_at_start.end():].strip()
+    for line in merged:
+        wd_match = _WD_START.match(line)
+        if wd_match:
+            # 保存上一个 block
+            if current_day and current_lines:
+                day_blocks[current_day] = "\n".join(current_lines)
+            current_day = _WEEKDAY_EN[_WEEKDAY_NAMES.index(wd_match.group(1))]
+            # 去掉星期前缀，保留课程内容
+            rest = line[wd_match.end():].strip()
+            current_lines = [rest] if rest else []
+        elif current_day:
+            # 遇到实践课程/其他课程 → 结束当前 block
+            if re.match(r"^(实践课程|其他课程)[：:]", line):
+                if current_lines:
+                    day_blocks[current_day] = "\n".join(current_lines)
+                current_day = ""
+                current_lines = []
+            else:
+                current_lines.append(line)
 
-        if not line_weekday:
-            continue
+    if current_day and current_lines:
+        day_blocks[current_day] = "\n".join(current_lines)
 
-        # 提取地点（如 "教A301", "实验楼B202"）
-        location = ""
-        loc_match = _LOCATION_RE.search(after_time)
-        if loc_match:
-            location = loc_match.group(0)
-            after_time = after_time.replace(location, "").strip()
+    # ── 解析每个星期的课程 ──
+    for weekday_en, block in day_blocks.items():
+        for m in _COURSE_LINE_RE.finditer(block):
+            section_start = m.group(1)
+            section_end = m.group(2)
+            course_name = m.group(3).strip()
+            detail_str = m.group(4).strip()
 
-        # 剩余部分作为课程标题
-        title = (before_time + " " + after_time).strip()
-        title = re.sub(r"\s+", " ", title).strip(" ，,。.")
-        if not title or len(title) < 2:
-            title_match = re.search(r"[一-龥A-Za-z]{2,20}", after_time)
-            if title_match:
-                title = title_match.group(0)
+            start_time, end_time = _section_to_time(section_start, section_end)
+            fields = _parse_detail_fields(detail_str)
 
-        if title and line_weekday:
             items.append({
-                "title": title,
-                "weekday": line_weekday,
+                "title": course_name,
+                "weekday": weekday_en,
                 "startTime": start_time,
                 "endTime": end_time,
-                "location": location,
+                "location": fields.get("地点", ""),
+                "teacher": fields.get("教师", ""),
+                "weeks": fields.get("周数", ""),
+                "campus": fields.get("校区", ""),
+                "credits": fields.get("学分", ""),
+                "assessment": fields.get("考核方式", ""),
+                "remark": fields.get("选课备注", ""),
             })
 
     warning = ""
     if not items:
-        warning = "未能识别出课表条目，请确认 PDF 包含文本格式的课表（非图片扫描件），或手动输入。"
+        warning = "未能识别出课表条目，请确认 PDF 为教务系统导出的文本格式课表（非图片扫描件）。"
+
     return items, warning
 
 
@@ -173,10 +215,10 @@ async def upload_schedule_pdf(
                     endTime=item["endTime"],
                     location=item.get("location", ""),
                     date="",
-                    teacher="",
+                    teacher=item.get("teacher", ""),
                     repeat="weekly",
                     source="pdf_upload",
-                    remark=f"从 {source_file.original_filename} 导入",
+                    remark=item.get("remark", f"从 {source_file.original_filename} 导入"),
                 )
                 event = await svc_create_event(db, user_id, payload)
                 created_events.append({
