@@ -95,6 +95,37 @@
                 </div>
               </div>
 
+              <div v-if="message.resultCard.type === 'schedule'" class="card-section">
+                <div class="card-meta" v-if="message.resultCard.view">
+                  {{ message.resultCard.view === 'week' ? '周课表视图' : '今日课表' }}
+                  <span v-if="message.resultCard.events?.length">（{{ message.resultCard.events.length }} 节课）</span>
+                </div>
+                <div class="schedule-timeline" v-if="message.resultCard.view !== 'week' && message.resultCard.events?.length">
+                  <div
+                    v-for="(evt, evtIdx) in message.resultCard.events"
+                    :key="`se-${index}-${evtIdx}`"
+                    class="schedule-item"
+                    :class="{ 'schedule-item--conflict': evt.conflict }"
+                  >
+                    <span class="schedule-time">{{ evt.time || '--:--' }}</span>
+                    <span class="schedule-title">{{ evt.title }}</span>
+                    <span class="schedule-loc" v-if="evt.location">{{ evt.location }}</span>
+                  </div>
+                </div>
+                <div class="schedule-week-grid" v-if="message.resultCard.view === 'week' && message.resultCard.events?.length">
+                  <div
+                    v-for="(evt, evtIdx) in message.resultCard.events"
+                    :key="`sw-${index}-${evtIdx}`"
+                    class="schedule-week-item"
+                  >
+                    <span class="schedule-week-day">{{ evt.weekday || '--' }}</span>
+                    <span class="schedule-week-time">{{ evt.time }}</span>
+                    <span class="schedule-week-title">{{ evt.title }}</span>
+                    <span class="schedule-week-loc" v-if="evt.location">{{ evt.location }}</span>
+                  </div>
+                </div>
+              </div>
+
               <div v-if="message.resultCard.type === 'check'" class="card-section">
                 <div class="card-meta">
                   校验结果：
@@ -317,6 +348,8 @@ const normalizeCardType = (typeValue) => {
     navigation: 'navigation',
     route: 'navigation',
     map: 'navigation',
+    schedule: 'schedule',
+    timetable: 'schedule',
     check: 'check',
     validation: 'check',
     verify: 'check',
@@ -350,6 +383,7 @@ const getResultCardTypeLabel = (type) => {
     answer: '问答型',
     recommendation: '推荐型',
     navigation: '导航型',
+    schedule: '课表型',
     check: '检查型'
   };
 
@@ -361,6 +395,7 @@ const getResultCardTagType = (type) => {
     answer: 'primary',
     recommendation: 'success',
     navigation: 'warning',
+    schedule: 'success',
     check: 'danger'
   };
 
@@ -467,6 +502,27 @@ const normalizeResultCard = (rawCard) => {
       end: rawCard.end || rawCard.to || rawCard.destination || '',
       mapUrl: rawCard.mapUrl || rawCard.map_url || '',
       routes: routeItems
+    };
+  }
+
+  if (type === 'schedule') {
+    const scheduleEvents = toArray(rawCard.events || rawCard.items).map((item, index) => {
+      if (typeof item === 'string') {
+        return { title: item, time: '', location: '', weekday: '' };
+      }
+      return {
+        title: item?.title || item?.name || `课程${index + 1}`,
+        time: item?.time || item?.startTime || `${item?.start || ''}${item?.end ? '-' + item.end : ''}`,
+        location: item?.location || item?.place || '',
+        weekday: item?.weekday || item?.day || '',
+        type: item?.type || '',
+      };
+    });
+
+    return {
+      ...baseCard,
+      view: rawCard.view || (scheduleEvents.length > 10 ? 'week' : 'day'),
+      events: scheduleEvents,
     };
   }
 
@@ -1379,6 +1435,83 @@ const loadSessionHistory = (session) => {
 
 .send-button {
   height: fit-content;
+}
+
+.schedule-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.schedule-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #f5f7fa;
+  border-left: 3px solid #409eff;
+  font-size: 13px;
+}
+
+.schedule-item--conflict {
+  border-left-color: #f56c6c;
+  background: #fef0f0;
+}
+
+.schedule-time {
+  font-family: monospace;
+  font-weight: 600;
+  color: #303133;
+  min-width: 90px;
+}
+
+.schedule-title {
+  flex: 1;
+  color: #303133;
+  font-weight: 500;
+}
+
+.schedule-loc {
+  color: #909399;
+  font-size: 12px;
+}
+
+.schedule-week-grid {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 6px 12px;
+  margin-top: 8px;
+}
+
+.schedule-week-item {
+  display: contents;
+  font-size: 12px;
+}
+
+.schedule-week-day {
+  font-weight: 600;
+  color: #409eff;
+  padding: 2px 6px;
+  background: #ecf5ff;
+  border-radius: 4px;
+  text-align: center;
+  min-width: 36px;
+}
+
+.schedule-week-time {
+  font-family: monospace;
+  color: #606266;
+}
+
+.schedule-week-title {
+  color: #303133;
+  font-weight: 500;
+}
+
+.schedule-week-loc {
+  color: #909399;
 }
 
 .card-actions {
