@@ -1,8 +1,8 @@
 # META MEMORY — AUTO RESEARCH AGENT
-## STATUS: Phase 4 Completed — UC-09 请假条生成 ✅
+## STATUS: Phase 4 Completed — 容器已停止，待下阶段
 ## START TIME: 2026-05-08 14:00 CST
-## LAST UPDATE: 2026-05-08 23:20 CST
-## PROGRESS: 98% → target 100% (仅剩弱网测试)
+## LAST UPDATE: 2026-05-09 00:00 CST
+## PROGRESS: 90% (请假条完成但需进一步修改，向量库检索待修复)
 
 ### 工作规则
 - **每完成一个阶段/子任务，必须 `git commit` + `git push` 到 GitHub `agent-centric` 分支。** 不允许积攒多个阶段一起提交。
@@ -249,6 +249,13 @@ SSE Events (新增类型):
 - [x] UC-09 请假条生成 (2种类型: 课程请假 + 长假期请假) ✅ 2026-05-08
 - [ ] 可选: 安装 `gh` CLI
 
+### 下阶段 TODO（2026-05-09 待做）
+
+- [ ] **请假功能进一步修改** — 根据用户反馈优化表单字段、模板格式、Agent 参数提取准确性
+- [ ] **课程日程安排优化** — 日程冲突检测 UI 增强、周视图交互改进、拖拽排序
+- [ ] **内容来源显示增强** — RAG 检索结果中 source 信息展示（文件名称 + 引用片段 + 可点击跳转）
+- [ ] **向量库内容导入** — 当前 ChromaDB 检索返回空 ("未找到相关内容")，需排查：检查向量库是否已索引、embedding 模型是否正常、query 是否匹配文档内容
+
 ---
 
 # 9. PHASE 4 — UC-09 请假条生成 ✅
@@ -265,5 +272,8 @@ SSE Events (新增类型):
 
 # 10. NEXT STEP (AUTONOMOUS DECIDED)
 
-→ 弱网环境测试工具调用可视化体验。
-→ 如用户有新需求，优先处理。
+→ **高优先级**：修复向量库 ChromaDB 检索（用户反馈问不到内容，RAG 返回空）
+→ 请假功能根据用户反馈进一步修改
+→ 课程日程安排 UI 优化
+→ 内容来源展示增强（source citation）
+→ 所有容器已停止 (`docker stop 507-agent-*`)，下次启动：按 README.md 步骤 4 操作
