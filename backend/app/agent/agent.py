@@ -183,7 +183,7 @@ async def get_agent_response(
         }):
             if "output" in chunk:
                 full_response.append(chunk["output"])
-            elif "intermediate_steps" in chunk:
+            if "intermediate_steps" in chunk:
                 for action, observation in chunk["intermediate_steps"]:
                     # 记录日志
                     logger.info(f"\n\n🧠 [Agent 思考] {action.log}")
@@ -294,12 +294,12 @@ async def get_agent_stream_response(
         }):
             if "output" in chunk:
                 chunk_content = chunk["output"]
-                full_response.append(chunk_content)
-                # 实时发送输出
-                yield f"data: {json.dumps({'type': 'response', 'content': chunk_content}, ensure_ascii=False)}\n\n"
-                logger.info(f"【debug】当前响应: {chunk_content}")
-                await asyncio.sleep(0.05)  # 减少延迟，提高响应速度
-            elif "intermediate_steps" in chunk:
+                if chunk_content:
+                    full_response.append(chunk_content)
+                    yield f"data: {json.dumps({'type': 'response', 'content': chunk_content}, ensure_ascii=False)}\n\n"
+                    logger.info(f"【debug】当前响应: {chunk_content}")
+                    await asyncio.sleep(0.05)
+            if "intermediate_steps" in chunk:
                 for action, observation in chunk["intermediate_steps"]:
                     # 记录日志
                     logger.info(f"\n\n🧠 [Agent 思考] {action.log}")

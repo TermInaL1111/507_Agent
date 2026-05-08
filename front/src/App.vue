@@ -1,12 +1,11 @@
 <template>
   <div class="app-container">
-    <!-- 侧边导航栏 -->
     <aside class="sidebar" v-if="showSidebar">
       <div class="logo">
         <el-icon size="32" color="#409EFF"><ChatLineRound /></el-icon>
         <span class="logo-text">AI助手</span>
       </div>
-      
+
       <el-menu
         :default-active="activeMenu"
         class="sidebar-menu"
@@ -19,7 +18,7 @@
           <el-icon><ChatDotRound /></el-icon>
           <span>AI问答</span>
         </el-menu-item>
-        
+
         <el-menu-item index="/sessions">
           <el-icon><ChatLineSquare /></el-icon>
           <span>会话管理</span>
@@ -54,18 +53,18 @@
           <el-icon><Collection /></el-icon>
           <span>知识库管理</span>
         </el-menu-item>
-        
+
         <el-menu-item index="/profile">
           <el-icon><User /></el-icon>
           <span>个人中心</span>
         </el-menu-item>
-        
+
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon>
           <span>系统设置</span>
         </el-menu-item>
       </el-menu>
-      
+
       <div class="user-info">
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
@@ -82,8 +81,7 @@
         </el-dropdown>
       </div>
     </aside>
-    
-    <!-- 主内容区 -->
+
     <main class="main-content" :class="{ 'no-sidebar': !showSidebar }">
       <router-view v-slot="{ Component }">
         <template v-if="$route.meta.keepAlive">
@@ -109,12 +107,10 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
-// 判断是否显示侧边栏（登录页和注册页不显示）
 const showSidebar = computed(() => {
   return !['/login', '/register'].includes(route.path)
 })
 
-// 当前激活的菜单
 const activeMenu = computed(() => {
   if (route.path.startsWith('/aichat')) {
     return '/aichat'
@@ -123,7 +119,6 @@ const activeMenu = computed(() => {
   return route.path
 })
 
-// 处理下拉菜单命令
 const handleCommand = (command) => {
   switch (command) {
     case 'profile':
@@ -161,7 +156,6 @@ html, body, #app {
   width: 100vw;
 }
 
-/* 侧边栏 */
 .sidebar {
   width: 210px;
   height: 100%;
@@ -220,7 +214,6 @@ html, body, #app {
   white-space: nowrap;
 }
 
-/* 主内容区 */
 .main-content {
   flex: 1;
   overflow: auto;
