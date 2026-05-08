@@ -182,10 +182,11 @@
             :key="idx"
             closable
             size="small"
-            type="info"
+            :type="uploadingFile === idx ? 'warning' : 'info'"
             @close="removeFile(idx)"
           >
-            {{ f.name }}
+            <el-icon v-if="uploadingFile === idx" class="is-loading"><Loading /></el-icon>
+            {{ uploadingFile === idx ? '上传中...' : '' }} {{ f.name }}
           </el-tag>
         </div>
         <div class="input-container">
@@ -249,7 +250,7 @@
 import { computed, ref, onMounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { Link, User, ChatDotRound, ChatLineSquare, Promotion } from '@element-plus/icons-vue';
+import { Link, Loading, User, ChatDotRound, ChatLineSquare, Promotion } from '@element-plus/icons-vue';
 import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
@@ -281,6 +282,7 @@ const sourceDialogVisible = ref(false);
 const selectedSource = ref(null);
 const isDownloadingSource = ref(false);
 const pendingFiles = ref([]);
+const uploadingFile = ref(-1);
 const uploadRef = ref(null);
 
 const canDownloadSelectedSource = computed(() => {
@@ -767,22 +769,33 @@ const sendMessage = async () => {
   // 先上传文件
   let fileContext = '';
   if (hasFiles) {
-    try {
-      for (const file of pendingFiles.value) {
+    const fileCount = pendingFiles.value.length;
+    let successCount = 0;
+    let totalEvents = 0;
+    for (let i = 0; i < pendingFiles.value.length; i++) {
+      uploadingFile.value = i;
+      try {
+        const file = pendingFiles.value[i];
         const result = await uploadSingleFile(file);
+        successCount++;
         if (result.events_count > 0) {
+          totalEvents += result.events_count;
           fileContext += `\n📎 已从「${file.name}」导入 ${result.events_count} 条课表。`;
         } else {
           fileContext += `\n📎 已上传「${file.name}」${result.warning ? '（' + result.warning + '）' : ''}。`;
         }
+      } catch (e) {
+        ElMessage.error(`「${pendingFiles.value[i].name}」上传失败: ${e.message}`);
       }
-      pendingFiles.value = [];
-      uploadRef.value?.clearFiles();
-    } catch (e) {
-      ElMessage.error(`文件上传失败: ${e.message}`);
-      isLoading.value = false;
-      return;
     }
+    uploadingFile.value = -1;
+    if (successCount > 0) {
+      const parts = [`${successCount}/${fileCount} 个文件上传成功`];
+      if (totalEvents > 0) parts.push(`${totalEvents} 条课表已导入`);
+      ElMessage.success(parts.join('，'));
+    }
+    pendingFiles.value = [];
+    uploadRef.value?.clearFiles();
   }
 
   const userMessage = (userInput.value.trim() || '查看我的课表') + fileContext;

@@ -81,15 +81,21 @@ def _parse_schedule_pdf_text(text: str) -> tuple[list[dict], str]:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     # ── 预处理: 合并续行 ──
-    # PDF 提取的文本中，长字段可能被切成多行
-    # 续行特征: 以 : 或 / 开头，或者不以星期/节次数字开头且当前在课程条目内
+    # PDF 提取的文本中，长字段可能被切成多行。
+    # 续行特征: 不以星期/节次/实践课程/其他课程/*: 开头
+    _START_LINE_RE = re.compile(
+        r"^(星期[一二三四五六日])"          # 星期头
+        r"|^\d{1,2}\s*-\s*\d{1,2}\s+"     # 节次范围 (如 5-6 课程名)
+        r"|^(实践课程|其他课程)[：:]"        # 特殊段
+        r"|^\*:"                            # 脚注
+    )
     raw_lines = text.split("\n")
     merged: list[str] = []
     for line in raw_lines:
         stripped = line.strip()
         if not stripped:
             continue
-        if merged and (stripped.startswith(":") or stripped.startswith("/")):
+        if merged and not _START_LINE_RE.match(stripped):
             merged[-1] = merged[-1] + stripped
         else:
             merged.append(stripped)

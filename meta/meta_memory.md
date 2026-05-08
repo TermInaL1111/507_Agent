@@ -198,6 +198,35 @@ SSE Events (新增类型):
 | T7 | agent.py BOM 字符 UTF-8 BOM (U+FEFF) | 文件编辑工具写入 BOM | `python3 -c` 检测并移除 |
 | T8 | `get_user_info_tools(token)` 设计问题 | LLM 不知道 JWT token 值 | 改用 contextvars 注入 user_id |
 | T9 | `tool_call`/`tool_result` SSE 事件不触发 | agent.py `astream` 循环中 chunk 同时包含 `output` 和 `intermediate_steps`，`elif` 导致跳过后者的处理 | `elif` 改为独立的 `if`，两者独立处理 |
+| T10 | PDF 课表解析只识别 6/8 门课 | PDF 提取文本中 `选\n课备注` 被断行，`课备注:` 不以 `:` 或 `/` 开头导致续行合并不生效 | 改续行逻辑：不以星期/节次/实践/其他/*: 开头的行全视为续行 |
+| T11 | 前端 `VITE_AMAP_KEY` 未配置 | `docker build` 没用 `--build-arg` 传入 AMap key | 构建时显式传入 VITE_AMAP_KEY 和 VITE_AMAP_SECURITY_CODE |
+
+---
+
+# 8. 新需求 — 请假条生成 (UC-09 增强)
+
+### 需求分析
+- **两种请假类型**：课程请假（单次课） + 长假期请假（多天）
+- **表单字段**：姓名、学号、班级、请假原因、开始/结束日期、天数
+- **校验**：标题/姓名为空 → "必填项不能为空"
+- **输出**：python-docx 生成 Word 文档 → 浏览器下载
+- **Agent 联动**：对话中说"帮我写请假条" → Agent 提取参数 → 自动补全用户信息 → 返回下载链接
+
+### 实现方案 (7 步)
+| 步骤 | 文件 | 说明 |
+|------|------|------|
+| 1 | `backend/app/schemas/leave.py` | Pydantic LeaveRequest schema (2种类型: course_leave / long_leave) |
+| 2 | `backend/app/services/leave_service.py` | python-docx 生成：姓名/学号/班级/事由/起止/辅导员签字栏/学院盖章栏 |
+| 3 | `backend/app/router/leave.py` | POST `/api/leave/generate` → 返回 docx 文件流 |
+| 4 | `backend/app/agent/agent_tools.py` | `generate_leave_request` 工具：Agent 从对话提取参数，调 service 返回下载链接 |
+| 5 | `front/src/views/LeaveRequest.vue` | Element Plus 表单 + 提交下载 |
+| 6 | `front/src/router/index.js` | 添加 `/leave-request` 路由 |
+| 7 | `front/src/App.vue` | 侧边栏新增"文书辅助"入口 |
+
+### 技术决策
+- **不需要数据库**：请假条即时生成，不存储
+- **不需要 Django**：纯 FastAPI 处理
+- **Agent 自动补全**：通过 contextvar 拿 user_id → 查 Django 拿到姓名/学号/班级
 
 ---
 
@@ -209,14 +238,15 @@ SSE Events (新增类型):
 - [x] Phase 3b: 场景 A-E 验证测试 — 5/5 通过
 - [x] T9 修复: elif→if bug (tool_call SSE 不触发)
 - [x] RAG ChromaDB 索引导入 (Training Program 7 files → 507 chunks)
-- [ ] 可选: 添加 schedule 卡片的 result_card 传递链路 (backend → Agent → frontend)
-- [ ] 可选: 安装 `gh` CLI 简化 GitHub 操作
-- [ ] 可选: 弱网环境用户体验测试
+- [x] PDF 课表解析器重写 (适配教务系统格式，修复合并续行逻辑)
+- [x] 前端上传进度指示 + 成功提示
+- [x] 前端 AMap key 配置修复
+- [ ] UC-09 请假条生成 (2种类型: 课程请假 + 长假期请假)
+- [ ] 可选: 安装 `gh` CLI
 
 ---
 
 # 9. NEXT STEP (AUTONOMOUS DECIDED)
 
-→ Commit & push Phase 3 结果到 GitHub，更新 meta_memory.md 最终状态。
-→ 如用户需要，可进行 5 场景的浏览器端 UI 验证（通过 http://8.137.19.10 访问前端）。
-→ 长期改进：补充更多培养方案文档覆盖计算机等缺失专业；设计真实课表 PDF 模板用于场景B完整验证。
+→ 实现请假条生成功能（7 步），先做后端 4 步再前端 3 步。
+→ Commit & push 当前修复到 GitHub。
