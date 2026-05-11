@@ -1,67 +1,70 @@
 import { defineStore } from 'pinia';
 
+const THEME_CONFIGS = {
+  light: {
+    name: '浅色模式',
+    primaryColor: '#409EFF',
+    description: '清爽明亮，适合日间使用',
+  },
+  dark: {
+    name: '深色模式',
+    primaryColor: '#409EFF',
+    description: '护眼舒适，适合夜间使用',
+  },
+  blue: {
+    name: '海洋蓝',
+    primaryColor: '#1890ff',
+    description: '宁静专业，科技感十足',
+  },
+  green: {
+    name: '翡翠绿',
+    primaryColor: '#52c41a',
+    description: '清新自然，缓解视觉疲劳',
+  }
+};
+
 export const useThemeStore = defineStore('theme', {
   state: () => ({
-    currentTheme: localStorage.getItem('theme') || 'light', // 默认浅色主题
-    themes: {
-      light: {
-        name: '浅色模式',
-        backgroundColor: '#ffffff',
-        textColor: '#333333',
-        primaryColor: '#1989fa',
-        secondaryColor: '#f5f5f5',
-      },
-      dark: {
-        name: '深色模式',
-        backgroundColor: '#121212',
-        textColor: '#ffffff',
-        primaryColor: '#4c8bf5',
-        secondaryColor: '#2d2d2d',
-      },
-      blue: {
-        name: '蓝色主题',
-        backgroundColor: '#e6f7ff',
-        textColor: '#333333',
-        primaryColor: '#1890ff',
-        secondaryColor: '#bae7ff',
-      },
-      green: {
-        name: '绿色主题',
-        backgroundColor: '#f6ffed',
-        textColor: '#333333',
-        primaryColor: '#52c41a',
-        secondaryColor: '#d9f7be',
-      }
-    }
+    currentTheme: localStorage.getItem('theme') || 'light',
   }),
-  
+
   getters: {
     getCurrentTheme: (state) => state.currentTheme,
-    getThemeConfig: (state) => state.themes[state.currentTheme],
-    getAllThemes: (state) => Object.keys(state.themes).map(key => ({
+    getThemeConfig: (state) => THEME_CONFIGS[state.currentTheme] || THEME_CONFIGS.light,
+    getAllThemes: () => Object.keys(THEME_CONFIGS).map(key => ({
       id: key,
-      name: state.themes[key].name,
-      primaryColor: state.themes[key].primaryColor
+      name: THEME_CONFIGS[key].name,
+      primaryColor: THEME_CONFIGS[key].primaryColor,
+      description: THEME_CONFIGS[key].description,
     }))
   },
-  
+
   actions: {
     setTheme(themeName) {
-      if (this.themes[themeName]) {
-        this.currentTheme = themeName;
-        localStorage.setItem('theme', themeName);
-        this.applyTheme();
-      }
+      if (!THEME_CONFIGS[themeName]) return;
+      this.currentTheme = themeName;
+      localStorage.setItem('theme', themeName);
+      this.applyTheme();
     },
-    
+
     applyTheme() {
-      const theme = this.themes[this.currentTheme];
-      document.documentElement.style.setProperty('--background-color', theme.backgroundColor);
-      document.documentElement.style.setProperty('--text-color', theme.textColor);
-      document.documentElement.style.setProperty('--primary-color', theme.primaryColor);
-      document.documentElement.style.setProperty('--secondary-color', theme.secondaryColor);
+      const config = THEME_CONFIGS[this.currentTheme];
+      const root = document.documentElement;
+
+      // Element Plus 深色模式
+      if (this.currentTheme === 'dark') {
+        root.classList.add('dark');
+        // 动态加载 Element Plus 深色主题 CSS
+        import('element-plus/theme-chalk/dark/css-vars.css').catch(() => {});
+      } else {
+        root.classList.remove('dark');
+      }
+
+      // 设置主题色 CSS 变量
+      root.style.setProperty('--el-color-primary', config.primaryColor);
+      root.style.setProperty('--primary-color', config.primaryColor);
     },
-    
+
     initTheme() {
       this.applyTheme();
     }

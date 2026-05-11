@@ -225,22 +225,17 @@ export const useUserStore = defineStore('user', {
     },
     
     // 更新密码
-    async updatePassword(oldPassword, newPassword) {
+    async updatePassword(oldPassword, newPassword, confirmPassword) {
       try {
-        // 从localStorage获取token
         const token = this.getToken;
-        // 检查是否有token
         if (!token) {
-          return {
-            success: false,
-            message: '未登录'
-          };
+          return { success: false, message: '未登录' };
         }
-        
-        // 发送更新密码请求
-        const response = await axios.post('/user/change_password/', {
+
+        const response = await axios.post('/user/reset-password/', {
           old_password: oldPassword,
-          new_password: newPassword
+          new_password: newPassword,
+          confirm_password: confirmPassword || newPassword
         }, {
           headers: {
             Authorization: `Bearer ${token}`,
