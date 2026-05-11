@@ -8,12 +8,24 @@
       "label": "课程请假",
       "required": ["recipient_type"],
       "optional": ["teacher_name", "course_name", "start_time", "end_time"],
-      "auto_detect_from_schedule": true
+      "auto_detect_from_schedule": true,
+      "sub_variants": {
+        "teacher": {
+          "label": "交给任课老师",
+          "template": "template_course_teacher.docx"
+        },
+        "student_affairs": {
+          "label": "学工组备案",
+          "template": "template_course_affairs.docx"
+        }
+      },
+      "default_recipient_type": "teacher"
     },
     "long_leave": {
       "label": "长假期请假",
       "required": [],
-      "optional": ["destination", "relative_relation", "relative_phone"]
+      "optional": ["destination", "relative_relation", "relative_phone", "phone", "leave_start", "leave_end", "total_days"],
+      "template": "template_long.docx"
     }
   }
 }
