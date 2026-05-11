@@ -462,7 +462,7 @@ async def doc_preview(
     already = {f["key"] for f in auto_filled} | {f["key"] for f in schedule_filled} | {f["key"] for f in extracted}
     missing = [{"key": k, "label": _field_label(k), "required": True} for k in required_keys if k not in already]
 
-    hint = "回复"确认"生成文档，或回复补充信息" if missing else "回复"确认"生成文档，或回复修改"
+    hint = '回复"确认"生成文档，或回复补充信息' if missing else '回复"确认"生成文档，或回复修改'
 
     return json.dumps({
         "type": "document_preview",
