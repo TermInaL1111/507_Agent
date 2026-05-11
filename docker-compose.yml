@@ -62,6 +62,7 @@ services:
       LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
       LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY:-}
       LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-507-agent}
+      DOCUMENTS_DIR: /app/documents
     depends_on:
       mysql:
         condition: service_healthy
@@ -72,6 +73,7 @@ services:
     volumes:
       - backend_data:/app/data
       - ./Training Program:/Training Program:ro
+      - ./documents:/app/documents:ro
 
   django-user:
     build:

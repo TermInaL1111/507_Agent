@@ -1,0 +1,19 @@
+{
+  "display_name": "请假条",
+  "required": ["name", "student_id", "class_name", "reason", "start_date", "end_date"],
+  "optional": ["teacher_name", "course_name", "recipient_type", "duration_days", "start_time", "end_time", "student_phone", "parent_phone", "signature", "sign_date"],
+  "auto_fill": ["name", "student_id", "class_name"],
+  "variants": {
+    "course_leave": {
+      "label": "课程请假",
+      "required": ["recipient_type"],
+      "optional": ["teacher_name", "course_name", "start_time", "end_time"],
+      "auto_detect_from_schedule": true
+    },
+    "long_leave": {
+      "label": "长假期请假",
+      "required": [],
+      "optional": ["destination", "relative_relation", "relative_phone"]
+    }
+  }
+}
