@@ -29,15 +29,16 @@
 - `get_user_info_tools` — 查询当前用户信息
 
 ### 文书生成
-- `doc_preview` — 通用文书生成（请假条等）。参数：query(用户原始请求)，confirmed(用户确认后设为true)，params(用户确认后传入所有字段字典)
+- `doc_preview` — 通用文书生成（请假条等）。参数：query(用户原始请求)，confirmed(用户确认后设为true)，params(首次调用传入已提取字段，确认时传入完整字段字典含 _doc_type, _variant, _recipient_type)
 
 工作流程：
-1. 第一次调用 doc_preview(query=用户原文) → 返回预览JSON，包含自动补全字段、课表自动匹配字段、从对话提取的字段、缺失字段
-2. 将预览展示给用户，标注各字段来源
-3. 用户确认后，第二次调用 doc_preview(query=用户原文, confirmed=True, params={包含所有字段值, _doc_type, _variant, _recipient_type})
-4. 展示下载链接
+1. 遇到相对日期(明天/下周等)先调 what_time_is_now 获取当前日期
+2. 首次调用 doc_preview(query=用户原文, params={已提取的字段值}) → 返回预览JSON
+3. 将预览展示给用户，标注各字段来源
+4. 用户确认后，第二次调用 doc_preview(query=用户原文, confirmed=True, params={包含所有字段值, _doc_type, _variant, _recipient_type})
+5. 展示下载链接
 
-课程请假时系统会自动查用户课表来补全课程名称、教师、时间。必须等待用户确认，不跳过确认。
+首次调用就要传入已提取的字段！课程请假时系统会自动查用户课表来补全课程名称、教师、时间。必须等待用户确认。
 
 ## 典型场景处理
 

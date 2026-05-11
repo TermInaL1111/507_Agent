@@ -268,11 +268,70 @@ def _match_document_type(query: str) -> tuple:
         if results and len(results) > 0 and results[0].get("score", 0) > 0.4:
             metadata = results[0].get("metadata", {})
             doc_type = metadata.get("document_type", "")
-            snippet = results[0].get("text", "")[:300]
+            snippet = results[0].get("text", "")[:400]
+            # Strip markdown headers and frontmatter to leave only readable text
+            import re
+            snippet = re.sub(r'^---\s*\n.*?\n---\s*\n?', '', snippet, flags=re.DOTALL)
+            snippet = re.sub(r'^#{1,4}\s+', '', snippet, flags=re.MULTILINE)
+            snippet = snippet.strip()
             return doc_type, snippet
     except Exception:
         pass
     return None, None
+
+
+def _resolve_relative_date(text: str) -> str:
+    """Resolve relative dates like '明天', '今天', '下周一' to YYYY-MM-DD."""
+    import re
+    today = datetime.date.today()
+    weekdays_cn = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6}
+
+    text = text.strip()
+
+    # Exact date patterns
+    for pattern in [r'(\d{4}-\d{2}-\d{2})', r'(\d{4}年\d{1,2}月\d{1,2}日)', r'(\d{1,2}月\d{1,2}日)']:
+        m = re.search(pattern, text)
+        if m:
+            d = m.group(1)
+            if '-' in d:
+                return d
+            d = d.replace('年', '-').replace('月', '-').replace('日', '')
+            parts = d.split('-')
+            if len(parts) == 2:
+                return f"{today.year}-{int(parts[0]):02d}-{int(parts[1]):02d}"
+            return f"{int(parts[0]):04d}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+
+    # Relative day: 今天/明天/后天/昨天
+    if '今天' in text:
+        return today.strftime("%Y-%m-%d")
+    if '明天' in text or '明日' in text:
+        return (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    if '后天' in text or '後天' in text:
+        return (today + datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+    if '昨天' in text:
+        return (today - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # 下周X / 下周一
+    m = re.search(r'下周(.)', text)
+    if m:
+        target = weekdays_cn.get(m.group(1))
+        if target is not None:
+            days_ahead = target - today.weekday() + 7
+            if days_ahead <= 7:
+                days_ahead += 7
+            return (today + datetime.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+
+    # 本周X / 周X
+    m = re.search(r'(?:本周)?(周.)', text)
+    if m:
+        target = weekdays_cn.get(m.group(1))
+        if target is not None:
+            days_ahead = target - today.weekday()
+            if days_ahead < 0:
+                days_ahead += 7
+            return (today + datetime.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+
+    return ""
 
 
 def _resolve_template_name(fields_config: dict, variant: str, recipient_type: str = "") -> str:
@@ -334,10 +393,11 @@ async def _lookup_schedule_for_leave(user_id: str, params: dict) -> list[dict]:
 课程请假时会自动查用户课表来补全课程名称、教师、时间等信息。
 
 工作方式：
-1. 首次调用: doc_preview(query=用户原文) → 返回预览JSON
-2. 用户确认后: doc_preview(query=用户原文, confirmed=True, params={所有字段, _doc_type, _variant, _recipient_type})
+1. 首次调用: 从用户消息中提取已有字段值，调用 doc_preview(query=用户原文, params={已提取字段...}) → 返回预览JSON
+2. 用户确认后: doc_preview(query=用户原文, confirmed=True, params={完整字段, _doc_type, _variant, _recipient_type})
 
-你必须在第一次调用后等待用户确认，不要跳过确认步骤。""")
+你必须在第一次调用后等待用户确认，不要跳过确认步骤。
+如果用户使用相对日期（如"明天""下周一"），先调用 what_time_is_now 获取当前日期再解析。""")
 async def doc_preview(
     query: str,
     confirmed: bool = False,
@@ -417,6 +477,19 @@ async def doc_preview(
     variant_label = vcfg.get("label", variant)
     required_keys = required_keys + vcfg.get("required", [])
     optional_keys = optional_keys + vcfg.get("optional", [])
+
+    # ── Resolve relative dates ──
+    for date_key in ["start_date", "end_date", "leave_start", "leave_end"]:
+        raw_val = params.get(date_key, "")
+        if raw_val:
+            resolved = _resolve_relative_date(raw_val)
+            if resolved:
+                params[date_key] = resolved
+        # Also try extracting from query if key is missing
+        if not params.get(date_key):
+            resolved = _resolve_relative_date(query)
+            if resolved:
+                params[date_key] = resolved
 
     # ── Auto-fill from Django ──
     auto_filled = []
