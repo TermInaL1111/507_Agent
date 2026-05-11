@@ -441,3 +441,106 @@ if __name__ == '__main__':
             print(result)
 
     asyncio.run(main())
+
+
+# ── Document Spec Store ──────────────────────────────────────────
+
+import json
+import os
+import re
+from pathlib import Path
+import chromadb
+from chromadb.config import Settings as ChromaSettings
+
+
+class DocumentSpecStore:
+    """ChromaDB-backed store for document type specs (spec.md files)."""
+    COLLECTION_NAME = "document_specs"
+
+    def __init__(self, documents_dir: str | None = None):
+        self.documents_dir = Path(documents_dir or os.getenv("DOCUMENTS_DIR", "/app/documents"))
+        chroma_dir = os.getenv("CHROMA_DB_PATH", "./chromadb")
+        persist_path = str(Path(chroma_dir) / "document_specs")
+        self._client = chromadb.PersistentClient(
+            path=persist_path,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+
+    @property
+    def collection(self):
+        return self._client.get_or_create_collection(self.COLLECTION_NAME)
+
+    def index_all(self):
+        """Scan documents/*/spec.md and index into ChromaDB."""
+        ids, documents, metadatas = [], [], []
+        for spec_path in sorted(self.documents_dir.glob("*/spec.md")):
+            doc_type = spec_path.parent.name
+            content = spec_path.read_text(encoding="utf-8")
+            frontmatter = self._parse_frontmatter(content)
+            body = self._strip_frontmatter(content)
+            chunks = self._chunk_text(body)
+            for i, chunk in enumerate(chunks):
+                ids.append(f"{doc_type}_{i}")
+                documents.append(chunk)
+                metadatas.append({
+                    "document_type": frontmatter.get("document_type", doc_type),
+                    "display_name": frontmatter.get("display_name", doc_type),
+                    "chunk_index": i,
+                })
+        if ids:
+            try:
+                existing = self.collection.get()["ids"]
+                if existing:
+                    self.collection.delete(ids=existing)
+            except Exception:
+                pass
+            self.collection.add(ids=ids, documents=documents, metadatas=metadatas)
+
+    def search(self, query: str, k: int = 3) -> list[dict]:
+        """Search for matching document specs."""
+        results = self.collection.query(query_texts=[query], n_results=k)
+        items = []
+        if results["ids"] and results["ids"][0]:
+            for i, doc_id in enumerate(results["ids"][0]):
+                items.append({
+                    "id": doc_id,
+                    "text": results["documents"][0][i] if results["documents"] else "",
+                    "score": results["distances"][0][i] if results["distances"] else 0.0,
+                    "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
+                })
+        return items
+
+    @staticmethod
+    def _parse_frontmatter(content: str) -> dict:
+        m = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
+        if not m:
+            return {}
+        result = {}
+        for line in m.group(1).strip().split("\n"):
+            if ":" in line:
+                k, v = line.split(":", 1)
+                result[k.strip()] = v.strip()
+        return result
+
+    @staticmethod
+    def _strip_frontmatter(content: str) -> str:
+        return re.sub(r'^---\s*\n.*?\n---\s*\n?', '', content, flags=re.DOTALL).strip()
+
+    @staticmethod
+    def _chunk_text(text: str, max_chars: int = 1000) -> list[str]:
+        paragraphs = text.split("\n\n")
+        chunks, current = [], ""
+        for p in paragraphs:
+            if len(current) + len(p) + 2 <= max_chars:
+                current = f"{current}\n\n{p}".strip()
+            else:
+                if current:
+                    chunks.append(current)
+                current = p
+        if current:
+            chunks.append(current)
+        return chunks or [text]
+
+
+# Singleton instance — populated at startup
+document_spec_store = DocumentSpecStore()

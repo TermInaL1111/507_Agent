@@ -22,6 +22,7 @@ from app.core.rate_limit import RateLimitMiddleware
 from app.core.logger_handler import logger
 
 from app.rag.reorder_service import check_and_download_reranker_model
+from app.rag.vector_store import document_spec_store
 #commit  zmg1111
 # 加载环境变量
 load_dotenv()
@@ -91,6 +92,12 @@ async def startup_event():
     # 检查并重排序模型
     check_and_download_reranker_model()
     logger.info("重排序模型检查完成")
+
+    try:
+        document_spec_store.index_all()
+        logger.info("Document specs indexed successfully")
+    except Exception as e:
+        logger.warning(f"Document spec indexing skipped: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
