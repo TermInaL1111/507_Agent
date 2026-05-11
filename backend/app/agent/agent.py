@@ -13,7 +13,7 @@ from langchain_core.tools import BaseTool
 from app.agent.agent_middleware import get_middleware
 from app.agent.agent_tools import (
     create_schedule_event,
-    generate_leave_request,
+    doc_preview,
     get_campus_route,
     get_schedule_today,
     get_schedule_week,
@@ -83,7 +83,7 @@ class AgentFactory:
             get_campus_route,
             get_training_program,
             recommend_courses,
-            generate_leave_request,
+            doc_preview,
         ]
 
     def _get_default_middleware(self) -> List:

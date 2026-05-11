@@ -1,5 +1,8 @@
 import contextvars
+import datetime
 import json
+import os
+from pathlib import Path
 from typing import List
 
 from langchain_core.tools import tool
@@ -16,16 +19,12 @@ from app.services.campus_location_service import (
     search_campus_locations as cl_search,
 )
 from app.services.schedule_ai_service import parse_schedule_items_from_text
-from app.schemas.leave import CourseLeaveRequest, LongLeaveRequest
-from app.services.leave_service import generate_leave_docx
 from app.services.schedule_service import (
     create_event as svc_create_event,
     find_conflicts as svc_find_conflicts,
     list_week_events as svc_list_week_events,
 )
 from app.utils.auth_utils import decode_django_jwt
-
-import datetime
 
 _current_user_id = contextvars.ContextVar("current_user_id", default="")
 
@@ -232,114 +231,252 @@ async def recommend_courses(strategy: str = "全面发展") -> str:
         return f"生成选课推荐时出现错误，请稍后重试。"
 
 
-# ── Leave request tool ───────────────────────────────────────────
+# ── Document generation tool ──────────────────────────────────────
 
-_TEMP_DIR = "/tmp/leave_docx"
+_DOCUMENTS_DIR = Path(os.getenv("DOCUMENTS_DIR", "/app/documents"))
+_DOCUMENTS_TEMP_DIR = Path(os.getenv("DOCUMENTS_TEMP_DIR", "/tmp/documents"))
+
+_FIELD_LABELS = {
+    "name": "姓名", "student_id": "学号", "class_name": "班级",
+    "reason": "原因", "start_date": "开始日期", "end_date": "结束日期",
+    "start_time": "开始时间", "end_time": "结束时间", "duration_days": "请假天数",
+    "teacher_name": "教师姓名", "recipient_type": "收件人类型", "course_name": "课程名称",
+    "student_phone": "本人电话", "parent_phone": "家长电话",
+    "signature": "签名", "sign_date": "签字日期",
+    "destination": "去向", "relative_relation": "亲属关系", "relative_phone": "亲属电话",
+    "phone": "离校期间电话", "leave_start": "离校时间", "leave_end": "返校时间",
+    "total_days": "共几天", "student_name": "姓名",
+}
 
 
-@tool(description="""生成请假条 Word 文档并返回下载链接。
+def _field_label(key: str) -> str:
+    return _FIELD_LABELS.get(key, key)
 
-两种类型：
-- course_leave: 课程请假（单次课请假），需要 recipient_type("teacher"交给任课老师 或 "student_affairs"学工组备案)、teacher_name(老师姓名，仅teacher类型)、class_name(班级)、student_name(姓名)、student_id(学号)、reason(请假原因)、duration_days(请假天数)、start_date(开始日期如2026年5月10日)、start_time(开始时间如8时)、end_date(结束日期)、end_time(结束时间)、student_phone(本人电话)、parent_phone(家长电话)、signature(签名)、sign_date(签字日期)
-- long_leave: 长假期请假（多天离校），需要 student_name(姓名)、student_id(学号)、class_name(班号)、phone(离校期间电话)、parent_relation(亲属关系如父亲/母亲)、parent_phone(亲属电话)、leave_start(离校时间如2026年5月10日8时)、leave_end(返校时间)、total_days(共几天)、reason(请假原因)、destination(去向地址)、signature(签字)、sign_date(签字日期)
 
-尽量从对话中提取信息填入参数，缺失的必填字段在返回中提醒用户补充。""")
-async def generate_leave_request(
-    leave_type: str = "course_leave",
-    # 课程请假字段
-    recipient_type: str = "teacher",
-    teacher_name: str = "",
-    class_name: str = "",
-    student_name: str = "",
-    student_id: str = "",
-    reason: str = "",
-    duration_days: str = "",
-    start_date: str = "",
-    start_time: str = "",
-    end_date: str = "",
-    end_time: str = "",
-    student_phone: str = "",
-    parent_phone: str = "",
-    signature: str = "",
-    sign_date: str = "",
-    # 长假期请假字段
-    phone: str = "",
-    parent_relation: str = "",
-    parent_phone_long: str = "",
-    leave_start: str = "",
-    leave_end: str = "",
-    total_days: str = "",
-    destination: str = "",
+def _load_fields_config(doc_type: str) -> dict:
+    fields_path = _DOCUMENTS_DIR / doc_type / "fields.json"
+    if not fields_path.exists():
+        return {}
+    return json.loads(fields_path.read_text(encoding="utf-8"))
+
+
+def _match_document_type(query: str) -> tuple:
+    """RAG-match query to document type. Returns (doc_type | None, spec_snippet | None)."""
+    try:
+        from app.rag.vector_store import document_spec_store
+        results = document_spec_store.search(query, k=3)
+        if results and len(results) > 0 and results[0].get("score", 0) > 0.4:
+            metadata = results[0].get("metadata", {})
+            doc_type = metadata.get("document_type", "")
+            snippet = results[0].get("text", "")[:300]
+            return doc_type, snippet
+    except Exception:
+        pass
+    return None, None
+
+
+def _resolve_template_name(fields_config: dict, variant: str, recipient_type: str = "") -> str:
+    """Pick the right template file based on variant and sub-variant."""
+    variants = fields_config.get("variants", {})
+    vcfg = variants.get(variant, {})
+    template = vcfg.get("template", "template.docx")
+    sub_variants = vcfg.get("sub_variants", {})
+    if sub_variants and recipient_type:
+        for sv_key, sv_cfg in sub_variants.items():
+            if sv_key == recipient_type or recipient_type == sv_key:
+                template = sv_cfg.get("template", template)
+                break
+    return template
+
+
+async def _lookup_schedule_for_leave(user_id: str, params: dict) -> list[dict]:
+    """Query user's schedule to auto-detect courses matching the leave time."""
+    if not user_id:
+        return []
+    try:
+        async with AsyncSessionLocal() as db:
+            events = await svc_list_week_events(db, user_id)
+    except Exception:
+        return []
+
+    if not events:
+        return []
+
+    target_date = params.get("start_date", "")
+    target_weekday = params.get("_weekday", "")
+
+    matches = []
+    for e in events:
+        if target_date and e.date and str(e.date) == target_date:
+            matches.append(e)
+        elif target_weekday and e.weekday == target_weekday:
+            matches.append(e)
+
+    if not matches:
+        return []
+
+    weekday_labels = {"Monday": "周一", "Tuesday": "周二", "Wednesday": "周三",
+                      "Thursday": "周四", "Friday": "周五", "Saturday": "周六", "Sunday": "周日"}
+    return [{
+        "course_name": e.title,
+        "teacher_name": e.teacher or "",
+        "start_date": str(e.date) if e.date else "",
+        "end_date": str(e.date) if e.date else "",
+        "start_time": e.startTime,
+        "end_time": e.endTime,
+        "weekday": weekday_labels.get(e.weekday, e.weekday),
+        "location": e.location or "",
+    } for e in matches]
+
+
+@tool(description="""通用文书生成工具。根据对话生成校园文书（请假条等）。
+
+课程请假时会自动查用户课表来补全课程名称、教师、时间等信息。
+
+工作方式：
+1. 首次调用: doc_preview(query=用户原文) → 返回预览JSON
+2. 用户确认后: doc_preview(query=用户原文, confirmed=True, params={所有字段, _doc_type, _variant, _recipient_type})
+
+你必须在第一次调用后等待用户确认，不要跳过确认步骤。""")
+async def doc_preview(
+    query: str,
+    confirmed: bool = False,
+    params: dict = None,
 ) -> str:
     import uuid
-    from pathlib import Path
 
-    Path(_TEMP_DIR).mkdir(parents=True, exist_ok=True)
+    if params is None:
+        params = {}
+    user_id = _current_user_id.get()
 
-    try:
-        if leave_type == "course_leave":
-            req = CourseLeaveRequest(
-                recipient_type=recipient_type,
-                teacher_name=teacher_name,
-                class_name=class_name,
-                student_name=student_name,
-                student_id=student_id,
-                reason=reason,
-                duration_days=duration_days,
-                start_date=start_date,
-                start_time=start_time,
-                end_date=end_date,
-                end_time=end_time,
-                student_phone=student_phone,
-                parent_phone=parent_phone,
-                signature=signature,
-                sign_date=sign_date,
-            )
-        else:
-            req = LongLeaveRequest(
-                student_name=student_name,
-                student_id=student_id,
-                class_name=class_name,
-                phone=phone,
-                parent_relation=parent_relation,
-                parent_phone=parent_phone_long or parent_phone,
-                leave_start=leave_start,
-                leave_end=leave_end,
-                total_days=total_days,
-                reason=reason,
-                destination=destination,
-                signature=signature,
-                sign_date=sign_date,
-            )
+    # ── Phase 2: Generate ──
+    if confirmed and params:
+        doc_type = params.pop("_doc_type", None)
+        variant = params.pop("_variant", None)
+        recipient_type = params.pop("_recipient_type", params.get("recipient_type", ""))
+        if not doc_type:
+            doc_type, _ = _match_document_type(query)
+        if not doc_type:
+            return "无法确定文书类型，请重新描述你的需求。"
 
-        buf, filename = generate_leave_docx(leave_type, req if leave_type == "course_leave" else None, req if leave_type == "long_leave" else None)
+        fields_config = _load_fields_config(doc_type)
+        required = list(fields_config.get("required", []))
 
-        file_id = uuid.uuid4().hex[:12]
-        file_path = Path(_TEMP_DIR) / f"{file_id}.docx"
-        file_path.write_bytes(buf.getvalue())
+        if variant and "variants" in fields_config:
+            vcfg = fields_config["variants"].get(variant, {})
+            required = required + vcfg.get("required", [])
 
-        download_url = f"/api/leave/download/{file_id}"
-
-        # 检查缺失字段
-        missing = []
-        if leave_type == "course_leave":
-            if not student_name: missing.append("姓名")
-            if not student_id: missing.append("学号")
-            if not class_name: missing.append("班级")
-            if not reason: missing.append("请假原因")
-            if not start_date: missing.append("开始日期")
-        else:
-            if not student_name: missing.append("姓名")
-            if not student_id: missing.append("学号")
-            if not reason: missing.append("请假原因")
-            if not leave_start: missing.append("离校时间")
-
-        hint = ""
+        missing = [f for f in required if not params.get(f)]
         if missing:
-            hint = f"\n\n⚠ 以下信息缺失，已留空：{'、'.join(missing)}。你可以[点击打开表单页面](/leave-request)补充完整后重新生成。"
+            labels = [_field_label(f) for f in missing]
+            return f"以下必填字段缺失：{'、'.join(labels)}。请补充后重新确认。"
 
-        return f"✅ 请假条已生成：[下载 {filename}]({download_url}){hint}"
+        template_name = _resolve_template_name(fields_config, variant, recipient_type)
 
-    except Exception as e:
-        logger.error(f"【请假条生成】Agent 工具异常: {e}")
-        return f"生成请假条时出现错误：{str(e)}"
+        from app.services.document_generator import DocumentGenerator
+        gen = DocumentGenerator(_DOCUMENTS_DIR, _DOCUMENTS_TEMP_DIR)
+        output_path = gen.generate(doc_type, params, template_name=template_name)
+        file_id = output_path.stem
+        file_size = output_path.stat().st_size
+        size_str = f"{file_size / 1024:.1f} KB" if file_size > 1024 else f"{file_size} B"
+
+        return json.dumps({
+            "type": "document_result",
+            "doc_type": doc_type,
+            "display_name": fields_config.get("display_name", doc_type),
+            "file_name": f"{file_id}.docx",
+            "file_size": size_str,
+            "download_url": f"/api/documents/download/{file_id}",
+            "expires_in": "30 分钟",
+        }, ensure_ascii=False)
+
+    # ── Phase 1: Preview ──
+    doc_type, spec_snippet = _match_document_type(query)
+    if not doc_type:
+        available = ["请假条"]
+        return f"暂不支持该文书类型。目前支持：{'、'.join(available)}。"
+
+    fields_config = _load_fields_config(doc_type)
+    if not fields_config:
+        return f"文书类型「{doc_type}」的字段配置缺失，请联系管理员。"
+
+    auto_fill_keys = fields_config.get("auto_fill", [])
+    required_keys = list(fields_config.get("required", []))
+    optional_keys = list(fields_config.get("optional", []))
+
+    # Determine variant (LLM choice or default)
+    variant = params.get("variant", "") or params.get("_variant", "")
+    variant_label = ""
+    if not variant and "variants" in fields_config:
+        variant = next(iter(fields_config["variants"].keys()))
+    vcfg = fields_config.get("variants", {}).get(variant, {})
+    variant_label = vcfg.get("label", variant)
+    required_keys = required_keys + vcfg.get("required", [])
+    optional_keys = optional_keys + vcfg.get("optional", [])
+
+    # ── Auto-fill from Django ──
+    auto_filled = []
+    if user_id and auto_fill_keys:
+        try:
+            from app.utils.django_user_client import fetch_user_profile
+            profile = fetch_user_profile(user_id)
+            if profile:
+                for key in auto_fill_keys:
+                    value = profile.get(key, "")
+                    if value:
+                        params[key] = value
+                        auto_filled.append({"key": key, "label": _field_label(key), "value": str(value), "source": "account"})
+        except Exception:
+            pass
+
+    # ── Auto-fill from schedule (course leave only) ──
+    schedule_candidates = []
+    schedule_filled = []
+    if variant == "course_leave" and vcfg.get("auto_detect_from_schedule"):
+        try:
+            schedule_candidates = await _lookup_schedule_for_leave(user_id, params)
+        except Exception:
+            pass
+
+    if schedule_candidates:
+        if len(schedule_candidates) == 1:
+            sc = schedule_candidates[0]
+            for key in ["teacher_name", "course_name", "start_date", "end_date", "start_time", "end_time"]:
+                val = sc.get(key, "")
+                if val and not params.get(key):
+                    params[key] = val
+                    schedule_filled.append({"key": key, "label": _field_label(key), "value": str(val), "source": "schedule"})
+
+    # ── Extract from LLM-provided params ──
+    extracted = []
+    for key in required_keys + optional_keys:
+        if key in auto_fill_keys:
+            continue
+        if any(sf["key"] == key for sf in schedule_filled):
+            continue
+        val = params.get(key, "")
+        if val:
+            extracted.append({"key": key, "label": _field_label(key), "value": str(val)})
+
+    # ── Missing ──
+    already = {f["key"] for f in auto_filled} | {f["key"] for f in schedule_filled} | {f["key"] for f in extracted}
+    missing = [{"key": k, "label": _field_label(k), "required": True} for k in required_keys if k not in already]
+
+    hint = "回复"确认"生成文档，或回复补充信息" if missing else "回复"确认"生成文档，或回复修改"
+
+    return json.dumps({
+        "type": "document_preview",
+        "doc_type": doc_type,
+        "display_name": fields_config.get("display_name", doc_type),
+        "variant": variant,
+        "variant_label": variant_label,
+        "fields": {
+            "auto_filled": auto_filled,
+            "schedule_filled": schedule_filled,
+            "extracted": extracted,
+            "missing": missing,
+        },
+        "schedule_candidates": schedule_candidates if len(schedule_candidates) > 1 else [],
+        "spec_reference": spec_snippet or "",
+        "hint": hint,
+    }, ensure_ascii=False)

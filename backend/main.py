@@ -12,7 +12,8 @@ from app.router.health import health_router
 from app.router.schedule import schedule_router
 from app.router.source_file import source_file_router
 from app.router.training_program import training_program_router
-from app.router.leave import leave_router
+from app.router.documents import documents_router
+from app.router.leave_redirect import leave_redirect_router
 from app.router.user import user_router
 
 from app.services.database_session_manager import init_database_session_manager
@@ -47,7 +48,8 @@ app.include_router(health_router)
 app.include_router(source_file_router)
 app.include_router(training_program_router)
 app.include_router(user_router)
-app.include_router(leave_router)
+app.include_router(documents_router)
+app.include_router(leave_redirect_router)
 app.include_router(schedule_router)
 
 
