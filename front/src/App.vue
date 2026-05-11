@@ -30,7 +30,7 @@
           <span>校园导航</span>
         </el-menu-item>
 
-        <el-menu-item index="/leave-request">
+        <el-menu-item index="/aichat" @click="openDocChat">
           <el-icon><Document /></el-icon>
           <span>文书辅助</span>
         </el-menu-item>
@@ -109,6 +109,10 @@ const activeMenu = computed(() => {
 })
 
 // 处理下拉菜单命令
+const openDocChat = () => {
+  router.push({ path: '/aichat', query: { prompt: '帮我写一份文书' } });
+};
+
 const handleCommand = (command) => {
   switch (command) {
     case 'profile':

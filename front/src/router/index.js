@@ -78,15 +78,6 @@ const routes = [
     }
   },
   {
-    path: '/leave-request',
-    name: 'LeaveRequest',
-    component: () => import('../views/LeaveRequest.vue'),
-    meta: {
-      title: '请假条生成',
-      keepAlive: false
-    }
-  },
-  {
     path: '/knowledge-manage',
     name: 'KnowledgeManage',
     component: () => import('../views/KnowledgeManage.vue'),

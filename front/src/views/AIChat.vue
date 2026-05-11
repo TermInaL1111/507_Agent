@@ -146,6 +146,70 @@
                   </li>
                 </ul>
               </div>
+
+                  <!-- 文书预览卡片 -->
+                  <div v-else-if="message.resultCard.type === 'document_preview'" class="result-card result-card--document-preview">
+                    <div class="result-card__header">
+                      <span class="result-card__type-tag">📄 {{ message.resultCard.displayName }}</span>
+                      <el-tag v-if="message.resultCard.variantLabel" size="small" type="info">{{ message.resultCard.variantLabel }}</el-tag>
+                    </div>
+                    <div v-if="message.resultCard.autoFilled.length" class="doc-fields-section">
+                      <div class="doc-fields-label">✅ 自动补全（来自账号信息）</div>
+                      <div class="doc-field-row" v-for="f in message.resultCard.autoFilled" :key="f.key">
+                        <span class="doc-field-label">{{ f.label }}：</span>
+                        <el-tag size="small" type="success">{{ f.value }}</el-tag>
+                      </div>
+                    </div>
+                    <div v-if="message.resultCard.scheduleFilled.length" class="doc-fields-section">
+                      <div class="doc-fields-label">📅 自动补全（来自课表匹配）</div>
+                      <div class="doc-field-row" v-for="f in message.resultCard.scheduleFilled" :key="f.key">
+                        <span class="doc-field-label">{{ f.label }}：</span>
+                        <el-tag size="small" type="warning">{{ f.value }}</el-tag>
+                      </div>
+                    </div>
+                    <div v-if="message.resultCard.scheduleCandidates.length" class="doc-fields-section">
+                      <div class="doc-fields-label">📅 课表匹配到多门课程，请确认是哪门：</div>
+                      <div class="doc-field-row" v-for="(sc, idx) in message.resultCard.scheduleCandidates" :key="idx">
+                        <el-tag size="small" type="warning">{{ sc.course_name }} — {{ sc.teacher_name }} ({{ sc.start_time }}-{{ sc.end_time }})</el-tag>
+                      </div>
+                    </div>
+                    <div v-if="message.resultCard.extracted.length" class="doc-fields-section">
+                      <div class="doc-fields-label">🤖 从对话提取</div>
+                      <div class="doc-field-row" v-for="f in message.resultCard.extracted" :key="f.key">
+                        <span class="doc-field-label">{{ f.label }}：</span>
+                        <el-tag size="small" type="primary">{{ f.value }}</el-tag>
+                      </div>
+                    </div>
+                    <div v-if="message.resultCard.missing.length" class="doc-fields-section">
+                      <div class="doc-fields-label">⚠️ 还需要补充</div>
+                      <div class="doc-field-row" v-for="f in message.resultCard.missing" :key="f.key">
+                        <span class="doc-field-label">{{ f.label }}：</span>
+                        <el-tag size="small" type="danger">待填写</el-tag>
+                      </div>
+                    </div>
+                    <div v-if="message.resultCard.specReference" class="doc-spec-ref">
+                      📋 {{ message.resultCard.specReference }}
+                    </div>
+                    <div v-if="message.resultCard.hint" class="doc-hint">
+                      💡 {{ message.resultCard.hint }}
+                    </div>
+                  </div>
+
+                  <!-- 文书结果卡片 -->
+                  <div v-else-if="message.resultCard.type === 'document_result'" class="result-card result-card--document-result">
+                    <div class="result-card__header">
+                      <span class="result-card__type-tag">📄 {{ message.resultCard.displayName }}已生成</span>
+                      <span class="result-card__file-size">{{ message.resultCard.fileSize }}</span>
+                    </div>
+                    <div class="doc-result-info">
+                      <div>文件名：{{ message.resultCard.fileName }}</div>
+                      <div v-if="message.resultCard.specReference">📋 {{ message.resultCard.specReference }}</div>
+                    </div>
+                    <el-button type="primary" @click="handleDocDownload(message.resultCard.downloadUrl)">
+                      📥 下载文档
+                    </el-button>
+                    <div class="doc-expiry">链接有效期 {{ message.resultCard.expiresIn }}</div>
+                  </div>
             </div>
 
             <div v-if="message.role === 'assistant' && message.toolCalls?.length" class="tool-calls">
@@ -355,7 +419,9 @@ const normalizeCardType = (typeValue) => {
     check: 'check',
     validation: 'check',
     verify: 'check',
-    audit: 'check'
+    audit: 'check',
+    document_preview: 'document_preview',
+    document_result: 'document_result',
   };
 
   return mapping[rawType] || '';
@@ -386,7 +452,9 @@ const getResultCardTypeLabel = (type) => {
     recommendation: '推荐型',
     navigation: '导航型',
     schedule: '课表型',
-    check: '检查型'
+    check: '检查型',
+    document_preview: '文书预览',
+    document_result: '文书已生成',
   };
 
   return labelMap[type] || '结果型';
@@ -551,6 +619,36 @@ const normalizeResultCard = (rawCard) => {
       ...baseCard,
       status: rawCard.status || rawCard.verdict || rawCard.compliance || '',
       checks: checkItems
+    };
+  }
+
+  if (type === 'document_preview') {
+    return {
+      ...baseCard,
+      docType: rawCard.doc_type || '',
+      displayName: rawCard.display_name || '',
+      variant: rawCard.variant || '',
+      variantLabel: rawCard.variant_label || '',
+      autoFilled: toArray(rawCard.fields?.auto_filled || rawCard.auto_filled || []),
+      scheduleFilled: toArray(rawCard.fields?.schedule_filled || rawCard.schedule_filled || []),
+      extracted: toArray(rawCard.fields?.extracted || rawCard.extracted || []),
+      missing: toArray(rawCard.fields?.missing || rawCard.missing || []),
+      scheduleCandidates: toArray(rawCard.schedule_candidates || []),
+      specReference: rawCard.spec_reference || '',
+      hint: rawCard.hint || '',
+    };
+  }
+
+  if (type === 'document_result') {
+    return {
+      ...baseCard,
+      docType: rawCard.doc_type || '',
+      displayName: rawCard.display_name || '',
+      fileName: rawCard.file_name || '',
+      fileSize: rawCard.file_size || '',
+      downloadUrl: rawCard.download_url || '',
+      expiresIn: rawCard.expires_in || '',
+      specReference: rawCard.spec_reference || '',
     };
   }
 
@@ -1080,6 +1178,28 @@ onMounted(async () => {
 });
 
 // 加载会话历史
+const handleDocDownload = (url) => {
+  const token = userStore.getToken;
+  const fullUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+  fetch(fullUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+    .then(res => res.blob())
+    .then(blob => {
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    })
+    .catch(() => {
+      window.open(fullUrl, '_blank', 'noopener,noreferrer');
+    });
+};
+
 const loadSessionHistory = (session) => {
   if (session.history && session.history.length > 0) {
     // 清空当前消息
@@ -1665,6 +1785,18 @@ const loadSessionHistory = (session) => {
   padding: 8px 12px;
   border-radius: 0 4px 4px 0;
 }
+
+.result-card--document-preview { border-left-color: #409eff; }
+.result-card--document-result { border-left-color: #67c23a; }
+.doc-fields-section { margin-bottom: 12px; }
+.doc-fields-label { font-size: 13px; color: #606266; margin-bottom: 6px; font-weight: 500; }
+.doc-field-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; padding-left: 8px; }
+.doc-field-label { font-size: 13px; color: #909399; min-width: 60px; }
+.doc-spec-ref { font-size: 12px; color: #909399; margin-top: 12px; padding-top: 8px; border-top: 1px dashed #e4e7ed; }
+.doc-hint { font-size: 13px; color: #e6a23c; margin-top: 8px; }
+.doc-result-info { margin-bottom: 12px; font-size: 13px; color: #606266; line-height: 1.8; }
+.doc-expiry { font-size: 12px; color: #c0c4cc; margin-top: 6px; }
+.result-card__file-size { font-size: 12px; color: #909399; }
 
 :deep(hr) {
   border: 0;
