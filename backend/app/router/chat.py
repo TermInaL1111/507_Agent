@@ -8,6 +8,8 @@ from fastapi.responses import StreamingResponse
 
 from app.agent.agent import get_agent_stream_response
 from app.agent.agent_tools import set_agent_user_context
+from app.utils.django_user_client import set_agent_jwt_token
+from app.utils.auth_utils import security
 from app.core.logger_handler import logger
 from app.db.db_config import AsyncSessionLocal
 from app.router.chat_service import ChatService, get_router_service
@@ -253,12 +255,16 @@ async def upload_schedule_pdf(
 async def query_stream(
         request: QueryRequest,
         user_id: str = Depends(get_current_user_id),
+        credentials = Depends(security),
         _: None = Depends(rate_limit(limit=100, window=60))
 ):
     """查询Agent流式响应"""
     # 如果没有提供session_id，自动生成一个
     session_id = request.session_id or str(uuid.uuid4())
-    
+
+    # Store JWT token for agent tools (e.g., doc_preview auto-fill)
+    set_agent_jwt_token(credentials.credentials)
+
     # 直接调用get_agent_stream_response函数
     return StreamingResponse(
         get_agent_stream_response(request.query, session_id, user_id),

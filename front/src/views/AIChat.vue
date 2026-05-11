@@ -1019,6 +1019,15 @@ const fetchAIResponse = async (userMessage) => {
                   running[0].status = 'done';
                 }
               }
+              // Check if tool result contains a document card (doc_preview returns JSON cards)
+              if (typeof json.result === 'string') {
+                const parsedResult = parseObjectFromJSONString(json.result);
+                if (parsedResult && (parsedResult.type === 'document_preview' || parsedResult.type === 'document_result')) {
+                  updateAssistantResultCard(parsedResult);
+                }
+              } else if (json.result && typeof json.result === 'object' && (json.result.type === 'document_preview' || json.result.type === 'document_result')) {
+                updateAssistantResultCard(json.result);
+              }
               break;
             }
             case 'response':
@@ -1202,26 +1211,35 @@ const handleDocDownload = (url) => {
 
 const loadSessionHistory = (session) => {
   if (session.history && session.history.length > 0) {
-    // 清空当前消息
     messages.value = [];
-    // 加载历史消息
     session.history.forEach(([userMsg, aiMsg]) => {
       const parsedHistoryPayload = parseObjectFromJSONString(aiMsg);
-      const historyCard = parsedHistoryPayload ? extractResultCard(parsedHistoryPayload) : null;
-      const historySources = parsedHistoryPayload ? normalizeSources(parsedHistoryPayload.sources || parsedHistoryPayload.references || parsedHistoryPayload.docs) : [];
+      const historyCard = parsedHistoryPayload
+        ? (extractResultCard(parsedHistoryPayload) || extractResultCard(parsedHistoryPayload.card))
+        : null;
+      const historySources = parsedHistoryPayload
+        ? normalizeSources(parsedHistoryPayload.sources || parsedHistoryPayload.references || parsedHistoryPayload.docs)
+        : [];
       const historyContent = parsedHistoryPayload
         ? (parsedHistoryPayload.answer || parsedHistoryPayload.response || parsedHistoryPayload.content || '')
         : aiMsg;
+      // Reconstruct tool calls from stored metadata
+      const historyToolCalls = (parsedHistoryPayload?.tool_calls || []).map(name => ({
+        tool: name,
+        args: {},
+        result: '',
+        status: 'done',
+      }));
 
       messages.value.push({ role: 'user', content: userMsg });
       messages.value.push({
         role: 'assistant',
         content: historyContent,
         sources: historySources,
-        resultCard: historyCard
+        resultCard: historyCard,
+        toolCalls: historyToolCalls.length ? historyToolCalls : undefined,
       });
     });
-    // 设置会话ID
     sessionId.value = session.session_id;
   }
 };

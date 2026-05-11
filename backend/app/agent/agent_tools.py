@@ -356,10 +356,14 @@ async def doc_preview(
         recipient_type = params.pop("_recipient_type", params.get("recipient_type", ""))
         if not doc_type:
             doc_type, _ = _match_document_type(query)
-        if not doc_type:
+        # Guard: if doc_type doesn't match a known spec, re-match via RAG
+        fields_config = _load_fields_config(doc_type) if doc_type else {}
+        if not fields_config:
+            doc_type, _ = _match_document_type(query)
+            fields_config = _load_fields_config(doc_type) if doc_type else {}
+        if not doc_type or not fields_config:
             return "无法确定文书类型，请重新描述你的需求。"
 
-        fields_config = _load_fields_config(doc_type)
         required = list(fields_config.get("required", []))
 
         if variant and "variants" in fields_config:

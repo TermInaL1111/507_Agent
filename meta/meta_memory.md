@@ -205,6 +205,11 @@ SSE Events (新增类型):
 | T10 | PDF 课表解析只识别 6/8 门课 | PDF 提取文本中 `选\n课备注` 被断行，`课备注:` 不以 `:` 或 `/` 开头导致续行合并不生效 | 改续行逻辑：不以星期/节次/实践/其他/*: 开头的行全视为续行 |
 | T11 | 前端 `VITE_AMAP_KEY` 未配置 | `docker build` 没用 `--build-arg` 传入 AMap key | 构建时显式传入 VITE_AMAP_KEY 和 VITE_AMAP_SECURITY_CODE |
 | T12 | Agent 查询返回 429，频繁触发退出登录 | 聊天接口限流 10/min 过严，429 被前端误当作 401 处理(旧代码) | 限流升至 100/min + 全局 200/min + 前端新增 429 专属提示 |
+| T13 | `doc_preview` 中文引号语法错误 | Python 双引号字符串内嵌中文 `""` 引号被解析为 Python 字符串结束符 | 外层改用单引号 `'...'` ，保留内部中文引号 |
+| T14 | 请假预览卡片不显示，纯文本展示 | `tool_result` SSE 事件只更新 toolCalls 状态，不调用 `updateAssistantResultCard()`，卡片 JSON 丢失 | `tool_result` handler 增加 card 检测：解析 result 为 JSON → 若 type 为 document_preview/result 则传给 `updateAssistantResultCard()` |
+| T15 | 用户"确认"后报错 `Template not found: /app/documents/course_leave/template.docx` | LLM 将 variant 名 `course_leave` 当作 `_doc_type` 传给工具，导致模板路径错误 | Phase 2 增加兜底：`_load_fields_config(doc_type)` 为空时自动 `_match_document_type(query)` 重新匹配 |
+| T16 | Django 用户信息 fetch 404 `/user/profile/{user_id}` | URL 不存在。Django 端点实际为 `/user/detail/` + JWT 鉴权，非路径参数 | 新建 `_agent_jwt_token` contextvar → `django_user_client.py` 调用 `/user/detail/` 带 Bearer token |
+| T17 | 会话重载后 tool 调用 chips 和卡片不显示 | `add_message()` 只存文本，`toolCalls`/`resultCard` 未持久化 | ①后端 `stored_response` 改为 JSON wrapper `{content, card, tool_calls}` ②前端 `loadSessionHistory` 解析 `card` + 从 `tool_calls` 重构 chips |
 
 ---
 

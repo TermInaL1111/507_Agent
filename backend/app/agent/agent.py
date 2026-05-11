@@ -358,6 +358,27 @@ async def get_agent_stream_response(
 
         response = "".join(full_response) if full_response else "抱歉，我无法理解您的请求。"
 
+        # Extract result card from doc_preview tool output (if any)
+        result_card = None
+        tool_call_names = []
+        for step in steps:
+            tool_call_names.append(step.get("tool", ""))
+            if step.get("tool") == "doc_preview":
+                try:
+                    card_candidate = json.loads(step.get("tool_output", "{}"))
+                    if card_candidate.get("type") in ("document_preview", "document_result"):
+                        result_card = card_candidate
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        # Build storable response with metadata
+        stored_response = {
+            "content": response,
+            "card": result_card,
+            "tool_calls": tool_call_names,
+        }
+        stored_str = json.dumps(stored_response, ensure_ascii=False)
+
         sources = []
         try:
             rag_service = RagService()
@@ -368,12 +389,15 @@ async def get_agent_stream_response(
         except Exception as source_error:
             logger.warning(f"【Agent流式响应】来源文件生成失败: {source_error}")
 
-        # 添加到会话历史
-        await sm.session_manager.add_message(session_id, user_id, query, response)
+        # Store with metadata wrapper so frontend can reconstruct cards on replay
+        await sm.session_manager.add_message(session_id, user_id, query, stored_str)
         logger.info(f"【Agent流式响应】添加到会话历史成功")
 
-        # 发送结束标记（附带工具调用步骤）
-        yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': sources, 'steps': steps}, ensure_ascii=False)}\n\n"
+        # Send done — include card so frontend can render immediately
+        done_payload = {'type': 'done', 'session_id': session_id, 'sources': sources, 'steps': steps}
+        if result_card:
+            done_payload['result_card'] = result_card
+        yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
         logger.info(f"【Agent流式响应】处理完成，会话ID: {session_id}")
     except Exception as e:
         logger.error(f"【Agent流式响应】处理请求失败: {e}", exc_info=True)
