@@ -90,3 +90,6 @@ ehthumbs_vista.db
 # Temporary files
 *.tmp
 *.temp
+
+# Superpowers
+.superpowers/
