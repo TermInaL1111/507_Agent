@@ -29,12 +29,10 @@ from app.agent.agent_tools import (
     what_time_is_now,
 )
 from app.core.logger_handler import logger
-from app.db.db_config import AsyncSessionLocal
 from app.rag.rag_service import RagService
 from app.rag.vector_store import is_training_program_query
 from app.services import session_manager as sm
 from app.services.campus_ai_service import campus_result_to_history, handle_campus_ai_message
-from app.services.schedule_ai_service import handle_schedule_ai_message
 from app.utils.prompt_loader import load_prompt
 
 
@@ -282,15 +280,7 @@ async def get_agent_stream_response(
                 chat_history.append(AIMessage(content=assistant_msg))
 
         # 从工厂获取全新的 Executor 实例
-
-        async with AsyncSessionLocal() as db:
-            schedule_result = await handle_schedule_ai_message(db, user_id, session_id, query, history)
-            if schedule_result.handled:
-                response = schedule_result.message
-                yield f"data: {json.dumps({'type': 'response', 'content': response, 'session_id': session_id}, ensure_ascii=False)}\n\n"
-                await sm.session_manager.add_message(session_id, user_id, query, response)
-                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': [], 'credibility': _credibility([])}, ensure_ascii=False)}\n\n"
-                return
+        # (schedule queries now flow through Agent for LLM-driven conflict detection)
 
         campus_result = handle_campus_ai_message(query)
         if campus_result.handled:
