@@ -24,11 +24,16 @@ class CampusLocation:
     name: str
     aliases: list[str]
     type: CampusLocationType
-    latitude: float
-    longitude: float
-    description: str
-    address: str
-    tags: list[str]
+    campus: str = "nanwangshan"
+    latitude: float = 0.0
+    longitude: float = 0.0
+    description: str = ""
+    address: str = ""
+    tags: list[str] = None
+
+    def __post_init__(self):
+        if self.tags is None:
+            object.__setattr__(self, 'tags', [])
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -124,6 +129,91 @@ CAMPUS_LOCATIONS: list[CampusLocation] = [
         description="学校行政办公、事务办理与会议接待区域。",
         address="校园行政办公区",
         tags=["行政", "办公", "办事", "会议"],
+    ),
+    # ── 未来城校区 (锦程街68号) ──
+    CampusLocation(
+        id="future-library",
+        name="未来城图书馆",
+        aliases=["未来城校图书馆", "新图书馆"],
+        type="library",
+        campus="future_city",
+        latitude=30.4580,
+        longitude=114.6140,
+        description="现代化智能图书馆，设有多媒体学习区。",
+        address="校区中心广场旁",
+        tags=["自习", "借阅", "多媒体"],
+    ),
+    CampusLocation(
+        id="future-canteen",
+        name="未来城第一食堂",
+        aliases=["未来城食堂", "新食堂"],
+        type="canteen",
+        campus="future_city",
+        latitude=30.4570,
+        longitude=114.6135,
+        description="三层综合餐厅，各地特色美食。",
+        address="学生生活区",
+        tags=["餐饮", "美食"],
+    ),
+    CampusLocation(
+        id="future-teaching-a",
+        name="未来城教学楼A区",
+        aliases=["未来城教学A", "新教A"],
+        type="teaching_building",
+        campus="future_city",
+        latitude=30.4585,
+        longitude=114.6155,
+        description="智慧教室，支持线上线下混合教学。",
+        address="校区东侧",
+        tags=["智慧教室", "多媒体", "上课"],
+    ),
+    CampusLocation(
+        id="future-dormitory",
+        name="未来城学生公寓",
+        aliases=["未来城宿舍", "研究生公寓"],
+        type="dormitory",
+        campus="future_city",
+        latitude=30.4585,
+        longitude=114.6130,
+        description="研究生公寓，2人间。",
+        address="生活区北侧",
+        tags=["研究生", "公寓", "宿舍"],
+    ),
+    CampusLocation(
+        id="future-sports",
+        name="未来城体育中心",
+        aliases=["未来城体育馆", "新体育馆"],
+        type="sports",
+        campus="future_city",
+        latitude=30.4595,
+        longitude=114.6128,
+        description="游泳馆、网球馆、室内体育馆。",
+        address="校区西北侧",
+        tags=["游泳", "网球", "健身"],
+    ),
+    CampusLocation(
+        id="future-service",
+        name="未来城综合服务楼",
+        aliases=["未来城超市", "快递站"],
+        type="other",
+        campus="future_city",
+        latitude=30.4575,
+        longitude=114.6138,
+        description="超市、打印店、快递驿站、银行ATM。",
+        address="生活区中心",
+        tags=["购物", "打印", "快递"],
+    ),
+    CampusLocation(
+        id="future-admin",
+        name="未来城行政楼",
+        aliases=["未来城办公楼", "新行政楼"],
+        type="office",
+        campus="future_city",
+        latitude=30.4565,
+        longitude=114.6145,
+        description="学院办公室、教务处、学生事务中心。",
+        address="校区南门入口",
+        tags=["办公", "教务", "事务"],
     ),
 ]
 
