@@ -231,6 +231,44 @@ async def recommend_courses(strategy: str = "全面发展") -> str:
         return f"生成选课推荐时出现错误，请稍后重试。"
 
 
+# ── FAQ recommendations tool ────────────────────────────────────
+
+@tool(description="""推荐高频相关问题。
+- query 为空时返回全部 FAQ（置顶优先）
+- query 非空时返回语义相似的高频问题列表
+当用户提问模糊、对话刚开始、或 RAG 检索无结果时调用。""")
+async def faq_recommend(query: str = "") -> str:
+    try:
+        from app.router.faq import _load_faq
+        faq = _load_faq()
+        all_questions = faq.get("questions", [])
+
+        if not query or not query.strip():
+            all_questions.sort(key=lambda q: (not q.get("pinned", False), q.get("sort", 99)))
+            items = all_questions[:8]
+        else:
+            matched = []
+            q_chars = set(query.replace(" ", ""))
+            for q in all_questions:
+                q_text = q.get("question", "").replace(" ", "")
+                common = len(q_chars & set(q_text))
+                if common > 1:
+                    matched.append((common, q))
+            matched.sort(key=lambda x: (not x[1].get("pinned", False), -x[0], x[1].get("sort", 99)))
+            items = [q for _, q in matched[:5]]
+            if not items:
+                items = [q for q in all_questions if q.get("pinned")][:5]
+
+        return json.dumps({
+            "type": "faq_recommendations",
+            "title": "你可能想问：" if query else "常见问题",
+            "questions": items,
+        }, ensure_ascii=False)
+    except Exception as e:
+        logger.warning(f"faq_recommend failed: {e}")
+        return "暂时无法加载常见问题。"
+
+
 # ── Document generation tool ──────────────────────────────────────
 
 _DOCUMENTS_DIR = Path(os.getenv("DOCUMENTS_DIR", "/app/documents"))
@@ -251,6 +289,48 @@ _FIELD_LABELS = {
 
 def _field_label(key: str) -> str:
     return _FIELD_LABELS.get(key, key)
+
+
+async def _extract_faq_from_documents() -> list[dict]:
+    """Extract FAQ questions from indexed student handbook docs via LLM."""
+    import uuid
+    try:
+        from app.rag.vector_store import VectorStoreService
+        store = VectorStoreService()
+        all_docs = await store._get_all_documents("shared")
+        if not all_docs:
+            return []
+        text = "\n\n".join(d.page_content[:500] for d in all_docs[:20])
+        summary = text[:3000]
+    except Exception:
+        return []
+
+    try:
+        from langchain_community.chat_models import ChatTongyi
+        llm = ChatTongyi(model="qwen3-max")
+        prompt = (
+            "从以下校园办事指南内容中，提取 5-10 个学生最常问的高频问题。"
+            "每个问题应该简洁明确（15字以内），覆盖文档中提到的不同事务。"
+            "只返回问题列表，每行一个问题，不要加序号，不要加其他内容。\n\n"
+            f"{summary}"
+        )
+        response = await llm.ainvoke(prompt)
+        lines = [line.strip() for line in response.content.split("\n") if line.strip()]
+        questions = []
+        for i, line in enumerate(lines):
+            line = line.lstrip("0123456789.、) ）")
+            if len(line) > 5:
+                questions.append({
+                    "id": f"faq_{uuid.uuid4().hex[:8]}",
+                    "question": line[:80],
+                    "category": "",
+                    "pinned": False,
+                    "sort": (i + 1) * 10,
+                })
+        return questions
+    except Exception as e:
+        logger.warning(f"FAQ extraction failed: {e}")
+        return []
 
 
 def _load_fields_config(doc_type: str) -> dict:

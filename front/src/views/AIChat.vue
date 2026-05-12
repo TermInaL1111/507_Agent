@@ -210,6 +210,41 @@
                     </el-button>
                     <div class="doc-expiry">链接有效期 {{ message.resultCard.expiresIn }}</div>
                   </div>
+
+                  <!-- 办事流程卡片 -->
+                  <div v-else-if="message.resultCard.type === 'process_guide'" class="result-card result-card--process-guide">
+                    <div class="result-card__header">
+                      <span class="result-card__type-tag">📋 {{ message.resultCard.title }}</span>
+                      <el-tag v-if="message.resultCard.category" size="small" type="info">{{ message.resultCard.category }}</el-tag>
+                    </div>
+                    <div v-if="message.resultCard.source" class="process-source">来源：{{ message.resultCard.source }}</div>
+                    <div v-for="step in message.resultCard.steps" :key="step.number" class="process-step">
+                      <div class="process-step__title">Step {{ step.number }} — {{ step.title }}</div>
+                      <div class="process-step__detail" v-if="step.materials.length">
+                        <span class="process-icon">📄</span> 材料：{{ step.materials.join('、') }}
+                      </div>
+                      <div class="process-step__detail" v-if="step.contact">
+                        <span class="process-icon">👤</span> 办理对象：{{ step.contact }}
+                      </div>
+                      <div class="process-step__detail" v-if="step.entry">
+                        <span class="process-icon">🔗</span> 入口：{{ step.entry }}
+                      </div>
+                      <div class="process-step__detail" v-if="step.notes">
+                        <span class="process-icon">⚠️</span> {{ step.notes }}
+                      </div>
+                    </div>
+                    <div v-if="message.resultCard.disclaimer" class="process-disclaimer">⚠️ {{ message.resultCard.disclaimer }}</div>
+                  </div>
+
+                  <!-- FAQ 推荐卡片 -->
+                  <div v-else-if="message.resultCard.type === 'faq_recommendations'" class="result-card result-card--faq">
+                    <div class="faq-title">{{ message.resultCard.title }}</div>
+                    <div class="faq-chips">
+                      <span v-for="q in message.resultCard.questions" :key="q.id" class="faq-chip" :class="{ 'faq-chip--pinned': q.pinned }" @click="sendFaqQuestion(q.question)">
+                        <span v-if="q.pinned" class="faq-pin">📌 </span>{{ q.question }}
+                      </span>
+                    </div>
+                  </div>
             </div>
 
             <div v-if="message.role === 'assistant' && message.toolCalls?.length" class="tool-calls">
@@ -240,6 +275,12 @@
       </div>
       
       <div class="input-area">
+        <div v-if="faqQuestions.length" class="faq-bar">
+          <span class="faq-bar__label">💬</span>
+          <span v-for="q in faqQuestions" :key="q.id" class="faq-bar__chip" :class="{ 'faq-bar__chip--pinned': q.pinned }" @click="sendFaqQuestion(q.question)">
+            {{ q.pinned ? '📌 ' : '' }}{{ q.question }}
+          </span>
+        </div>
         <div v-if="pendingFiles.length" class="file-chips">
           <el-tag
             v-for="(f, idx) in pendingFiles"
@@ -346,6 +387,20 @@ const sourceDialogVisible = ref(false);
 const selectedSource = ref(null);
 const isDownloadingSource = ref(false);
 const pendingFiles = ref([]);
+const faqQuestions = ref([]);
+
+const loadFaqQuestions = async () => {
+  try {
+    const token = userStore.getToken;
+    const resp = await fetch(`${window.location.origin}/api/faq`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      faqQuestions.value = (data.questions || []).slice(0, 6);
+    }
+  } catch {}
+};
 const uploadingFile = ref(-1);
 const uploadRef = ref(null);
 
@@ -422,6 +477,8 @@ const normalizeCardType = (typeValue) => {
     audit: 'check',
     document_preview: 'document_preview',
     document_result: 'document_result',
+    process_guide: 'process_guide',
+    faq_recommendations: 'faq_recommendations',
   };
 
   return mapping[rawType] || '';
@@ -455,6 +512,8 @@ const getResultCardTypeLabel = (type) => {
     check: '检查型',
     document_preview: '文书预览',
     document_result: '文书已生成',
+    process_guide: '办事流程指引',
+    faq_recommendations: '相关问题推荐',
   };
 
   return labelMap[type] || '结果型';
@@ -649,6 +708,36 @@ const normalizeResultCard = (rawCard) => {
       downloadUrl: rawCard.download_url || '',
       expiresIn: rawCard.expires_in || '',
       specReference: rawCard.spec_reference || '',
+    };
+  }
+
+  if (type === 'process_guide') {
+    return {
+      ...baseCard,
+      category: rawCard.category || '',
+      source: rawCard.source || '',
+      steps: toArray(rawCard.steps || []).map((s, idx) => ({
+        number: s?.number || idx + 1,
+        title: s?.title || `步骤 ${idx + 1}`,
+        materials: toArray(s?.materials || []),
+        contact: s?.contact || '',
+        entry: s?.entry || '',
+        notes: s?.notes || '',
+      })),
+      disclaimer: rawCard.disclaimer || '',
+    };
+  }
+
+  if (type === 'faq_recommendations') {
+    return {
+      ...baseCard,
+      title: rawCard.title || '你可能想问：',
+      questions: toArray(rawCard.questions || []).map(q => ({
+        id: q?.id || '',
+        question: q?.question || '',
+        category: q?.category || '',
+        pinned: q?.pinned || false,
+      })),
     };
   }
 
@@ -1162,6 +1251,7 @@ watch(() => route.params.sessionId, async (newSessionId) => {
 
 // 组件挂载时检查是否有当前会话或路由参数中的会话ID
 onMounted(async () => {
+  loadFaqQuestions();
   // 检查路由参数中是否有sessionId
   const routeSessionId = route.params.sessionId;
   
@@ -1207,6 +1297,11 @@ const handleDocDownload = (url) => {
     .catch(() => {
       window.open(fullUrl, '_blank', 'noopener,noreferrer');
     });
+};
+
+const sendFaqQuestion = (question) => {
+  userInput.value = question;
+  sendMessage();
 };
 
 const loadSessionHistory = (session) => {
@@ -1815,6 +1910,26 @@ const loadSessionHistory = (session) => {
 .doc-result-info { margin-bottom: 12px; font-size: 13px; color: #606266; line-height: 1.8; }
 .doc-expiry { font-size: 12px; color: #c0c4cc; margin-top: 6px; }
 .result-card__file-size { font-size: 12px; color: #909399; }
+
+.result-card--process-guide { border-left-color: #409eff; }
+.process-source { font-size: 12px; color: #909399; margin-bottom: 12px; }
+.process-step { margin: 12px 0; padding: 10px; background: #f5f7fa; border-radius: 6px; }
+.process-step__title { font-weight: 600; font-size: 14px; margin-bottom: 6px; color: #303133; }
+.process-step__detail { font-size: 13px; color: #606266; margin: 3px 0; padding-left: 4px; }
+.process-icon { margin-right: 4px; }
+.process-disclaimer { font-size: 12px; color: #e6a23c; margin-top: 12px; padding-top: 8px; border-top: 1px dashed #e4e7ed; }
+.result-card--faq { border-left-color: #67c23a; }
+.faq-title { font-size: 13px; color: #606266; margin-bottom: 10px; }
+.faq-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.faq-chip { display: inline-block; padding: 6px 14px; background: #ecf5ff; color: #409eff; border-radius: 20px; font-size: 13px; cursor: pointer; }
+.faq-chip:hover { background: #d9ecff; }
+.faq-chip--pinned { background: #fef0f0; color: #e6a23c; }
+.faq-pin { font-size: 12px; }
+.faq-bar { display: flex; align-items: center; gap: 8px; padding: 8px 0 4px; flex-wrap: wrap; }
+.faq-bar__label { font-size: 13px; color: #909399; }
+.faq-bar__chip { padding: 4px 12px; background: #f0f2f5; border-radius: 16px; font-size: 12px; color: #606266; cursor: pointer; white-space: nowrap; }
+.faq-bar__chip:hover { background: #ecf5ff; color: #409eff; }
+.faq-bar__chip--pinned { background: #fef0f0; color: #e6a23c; }
 
 :deep(hr) {
   border: 0;
