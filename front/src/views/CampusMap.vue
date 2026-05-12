@@ -106,6 +106,11 @@ const mapContainer = ref(null);
 const keyword = ref('');
 const activeType = ref('all');
 const activeCampus = ref('all');
+const campusCenters = {
+  nanwangshan: { lng: 114.3955, lat: 30.5173, zoom: 16 },
+  future_city: { lng: 114.5200, lat: 30.5800, zoom: 16 },
+  all: { lng: 114.4570, lat: 30.5480, zoom: 13 },
+};
 const campusOptions = computed(() => [
   ...campusList.map(c => ({ label: c.label, value: c.key }))
 ]);
@@ -174,7 +179,15 @@ const renderMarkers = () => {
 
   if (markers.length) {
     map.add(markers);
-    map.setFitView(markers, false, [80, 80, 80, 80]);
+    if (activeCampus.value !== 'all') {
+      const c = campusCenters[activeCampus.value];
+      map.setZoomAndCenter(c.zoom, [c.lng, c.lat]);
+    } else {
+      map.setFitView(markers, false, [80, 80, 80, 80]);
+    }
+  } else if (activeCampus.value !== 'all') {
+    const c = campusCenters[activeCampus.value];
+    map.setZoomAndCenter(c.zoom, [c.lng, c.lat]);
   }
 };
 
@@ -331,6 +344,13 @@ watch([filteredLocations, activeType], () => {
   if (selectedLocation.value && !filteredLocations.value.some((item) => item.id === selectedLocation.value.id)) {
     selectedLocation.value = filteredLocations.value[0] || null;
   }
+});
+
+watch(activeCampus, () => {
+  if (!map) return;
+  selectedLocation.value = null;
+  routeInfo.value = null;
+  renderMarkers();
 });
 
 watch(keyword, () => {
