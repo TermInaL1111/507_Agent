@@ -1176,13 +1176,6 @@ const fetchAIResponse = async (userMessage) => {
               }
               break;
             }
-              const curMsg = messages.value[messages.value.length - 1];
-              if (curMsg && curMsg.role === 'assistant') {
-                if (!curMsg.toolCalls) curMsg.toolCalls = [];
-                curMsg.toolCalls.push({ tool: json.tool, args: json.args, result: null, status: 'running' });
-              }
-              break;
-            }
             case 'tool_result': {
               const curMsg2 = messages.value[messages.value.length - 1];
               if (curMsg2 && curMsg2.role === 'assistant' && curMsg2.toolCalls) {
