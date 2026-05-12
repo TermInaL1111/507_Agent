@@ -40,9 +40,10 @@ class DocumentGenerator:
 
     @staticmethod
     def _replace_in_paragraph(paragraph, fields: dict[str, str]) -> None:
-        for key, value in fields.items():
-            placeholder = f"{{{{{key}}}}}"
-            display_value = value if value else "________"
-            for run in paragraph.runs:
-                if placeholder in run.text:
-                    run.text = run.text.replace(placeholder, display_value)
+        import re
+        for run in paragraph.runs:
+            matches = re.findall(r'\{\{(\w+)\}\}', run.text)
+            for key in matches:
+                value = fields.get(key, "") if fields else ""
+                display_value = value if value else "________"
+                run.text = run.text.replace(f"{{{{{key}}}}}", display_value)
