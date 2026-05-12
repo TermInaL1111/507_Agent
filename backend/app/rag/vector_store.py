@@ -44,9 +44,9 @@ class VectorStoreService:
     """向量数据库服务"""
     def __init__(self):
         persist_dir = get_abstract_path(chroma_config['persist_directory'])
-        # kb_shared — 管理员导入的共享知识库 (RAG 默认检索)
+        # 共享知识库 — 复用原有集合名，保持已有数据持久化
         self.vectors_store = Chroma(
-            collection_name="kb_shared",
+            collection_name=chroma_config['collection_name'],
             embedding_function=embed_model,
             persist_directory=persist_dir,
         )
