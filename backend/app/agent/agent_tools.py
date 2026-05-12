@@ -242,6 +242,49 @@ async def recommend_courses(strategy: str = "全面发展") -> str:
         return f"生成选课推荐时出现错误，请稍后重试。"
 
 
+# ── Memory tools (HelloAgents: Memory as Tool) ─────────────────
+
+@tool(description="""存储用户偏好或上下文信息，供后续对话使用。
+key: 存储的键名（如'preferred_name'、'schedule_reminder'）
+value: 存储的值
+在用户表达偏好、提供个人信息或完成重要操作后调用此工具记录。""")
+async def remember_user_context(key: str, value: str) -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份。"
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}/{os.getenv('REDIS_DB', '3')}")
+        redis_key = f"agent_memory:{user_id}:{key}"
+        await r.set(redis_key, value, ex=604800)  # TTL 7 days
+        await r.aclose()
+        return f"已记住：{key} = {value}"
+    except Exception as e:
+        logger.warning(f"Memory store failed: {e}")
+        return f"存储失败: {e}"
+
+
+@tool(description="""读取之前存储的用户偏好或上下文信息。
+key: 要查询的键名
+在需要了解用户偏好、历史选择或个性化信息时调用。""")
+async def recall_user_context(key: str) -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份。"
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}/{os.getenv('REDIS_DB', '3')}")
+        redis_key = f"agent_memory:{user_id}:{key}"
+        value = await r.get(redis_key)
+        await r.aclose()
+        if value:
+            return f"用户偏好 - {key}: {value.decode('utf-8')}"
+        return f"未找到 {key} 的相关记忆。"
+    except Exception as e:
+        logger.warning(f"Memory recall failed: {e}")
+        return f"读取失败: {e}"
+
+
 # ── FAQ recommendations tool ────────────────────────────────────
 
 @tool(description="""推荐高频相关问题。

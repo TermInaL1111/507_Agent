@@ -15,6 +15,8 @@ from app.agent.agent_tools import (
     create_schedule_event,
     doc_preview,
     faq_recommend,
+    recall_user_context,
+    remember_user_context,
     get_campus_route,
     get_schedule_today,
     get_schedule_week,
@@ -84,6 +86,8 @@ class AgentFactory:
             recommend_courses,
             doc_preview,
             faq_recommend,
+            recall_user_context,
+            remember_user_context,
         ]
 
     def _get_default_middleware(self) -> List:
