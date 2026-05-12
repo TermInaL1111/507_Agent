@@ -392,10 +392,20 @@ async def get_agent_stream_response(
         stored_str = json.dumps(stored_response, ensure_ascii=False)
 
         sources = []
+        # Use the RAG tool's actual query for source retrieval, not the original user message
+        rag_query = query
+        for step in steps:
+            if step.get("tool") in ("rag_summary_tools", "get_training_program", "recommend_courses"):
+                ti = step.get("tool_input", {})
+                if isinstance(ti, dict):
+                    rag_query = ti.get("query", rag_query)
+                elif isinstance(ti, str):
+                    rag_query = ti
+                break
         try:
             rag_service = RagService()
-            related_docs = await rag_service.retrieve_document(query)
-            sources = await rag_service.build_sources(related_docs, query=query)
+            related_docs = await rag_service.retrieve_document(rag_query)
+            sources = await rag_service.build_sources(related_docs, query=rag_query)
             if sources:
                 yield f"data: {json.dumps({'type': 'sources', 'sources': sources, 'session_id': session_id}, ensure_ascii=False)}\n\n"
         except Exception as source_error:

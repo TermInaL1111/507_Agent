@@ -251,9 +251,8 @@ const deleteSession = async (sessionId) => {
   }
 };
 
-// 打开新会话对话框
 const createNewSession = () => {
-  showNewSessionDialog.value = true;
+  router.push('/aichat');
 };
 
 // 确认创建新会话

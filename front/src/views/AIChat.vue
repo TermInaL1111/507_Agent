@@ -5,6 +5,10 @@
         <span class="page-title">AI智能问答</span>
       </template>
       <template #extra>
+        <el-button @click="startNewSession">
+          <el-icon><Plus /></el-icon>
+          新会话
+        </el-button>
         <el-button type="primary" @click="goToSessions">
           <el-icon><ChatLineSquare /></el-icon>
           会话管理
@@ -1223,6 +1227,13 @@ const fetchAIResponse = async (userMessage) => {
     console.error('Fetch error:', error);
     throw error;
   }
+};
+
+const startNewSession = () => {
+  messages.value = [{ role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', sources: [], resultCard: null }];
+  sessionId.value = '';
+  userInput.value = '';
+  router.replace('/aichat');
 };
 
 // 跳转到会话管理页面
