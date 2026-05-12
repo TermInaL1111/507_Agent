@@ -108,8 +108,8 @@ const activeType = ref('all');
 const activeCampus = ref('all');
 const campusCenters = {
   nanwangshan: { lng: 114.3955, lat: 30.5173, zoom: 16 },
-  future_city: { lng: 114.5200, lat: 30.5800, zoom: 16 },
-  all: { lng: 114.4570, lat: 30.5480, zoom: 13 },
+  future_city: { lng: 114.6140, lat: 30.4580, zoom: 16 },
+  all: { lng: 114.5050, lat: 30.4880, zoom: 12 },
 };
 const campusOptions = computed(() => [
   ...campusList.map(c => ({ label: c.label, value: c.key }))
