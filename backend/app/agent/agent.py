@@ -49,7 +49,7 @@ class AgentFactory:
 
     def __init__(
             self,
-            model: str = "deepseek-v4-flash",
+            model: str = "deepseek-chat",
             api_key: Optional[str] = None,
             default_tools: Optional[List[BaseTool]] = None,
             default_middleware: Optional[List] = None,

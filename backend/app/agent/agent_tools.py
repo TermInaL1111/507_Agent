@@ -307,7 +307,7 @@ async def _extract_faq_from_documents() -> list[dict]:
 
     try:
         from langchain_openai import ChatOpenAI
-        llm = ChatOpenAI(model="deepseek-v4-flash", api_key=os.getenv("DEEPSEEK_API_KEY"),
+        llm = ChatOpenAI(model="deepseek-chat", api_key=os.getenv("DEEPSEEK_API_KEY"),
                          base_url="https://api.deepseek.com/v1")
         prompt = (
             "从以下校园办事指南内容中，提取 5-10 个学生最常问的高频问题。"
