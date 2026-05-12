@@ -86,10 +86,12 @@
     </section>
   </div>
   <AgentFab />
+  <AgentPanel context="校园导航页面" />
 </template>
 
 <script setup>
 import AgentFab from '../components/AgentFab.vue';
+import AgentPanel from '../components/AgentPanel.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Aim, Guide, Refresh, Search } from '@element-plus/icons-vue';
@@ -148,10 +150,9 @@ const buildInfoContent = (location) => `
 `;
 
 const clearMarkers = () => {
-  if (map && markers.length) {
-    map.remove(markers);
-  }
+  markers.forEach(m => m.setMap(null));
   markers = [];
+  if (infoWindow) infoWindow.close();
 };
 
 const clearRoute = () => {
@@ -173,14 +174,18 @@ const renderMarkers = () => {
       const marker = new AMapInstance.Marker({
         position: [location.longitude, location.latitude],
         title: location.name,
-        anchor: 'bottom-center'
+        anchor: 'bottom-center',
+        clickable: true,
       });
-      marker.on('click', () => selectLocation(location));
+      marker.on('click', (e) => {
+        e.stopPropagation?.();
+        selectLocation(location);
+      });
+      marker.setMap(map);
       return marker;
     });
 
   if (markers.length) {
-    map.add(markers);
     if (activeCampus.value !== 'all') {
       const c = campusCenters[activeCampus.value];
       map.setZoomAndCenter(c.zoom, [c.lng, c.lat]);

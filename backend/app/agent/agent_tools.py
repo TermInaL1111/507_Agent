@@ -88,7 +88,7 @@ async def what_time_is_now() -> str:
 
 # ── Schedule tools ──────────────────────────────────────────────
 
-@tool(description="查询当前用户整周课表，返回一周所有日程安排。无需参数。")
+@tool(description="查询当前用户整周课表，返回一周所有日程安排。无需参数。返回结构化卡片数据。")
 async def get_schedule_week() -> str:
     user_id = _current_user_id.get()
     if not user_id:
@@ -99,13 +99,19 @@ async def get_schedule_week() -> str:
         return "当前课表还没有安排任何日程。"
     weekday_labels = {"Monday": "周一", "Tuesday": "周二", "Wednesday": "周三",
                       "Thursday": "周四", "Friday": "周五", "Saturday": "周六", "Sunday": "周日"}
+    card_events = []
     lines = []
     for e in events:
         wd = weekday_labels.get(e.weekday, e.weekday)
-        date_part = f" ({e.date})" if e.date else ""
-        loc = f" @{e.location}" if e.location else ""
-        lines.append(f"- {wd}{date_part} {e.startTime}-{e.endTime} 【{e.title}】{loc}")
-    return "整周课表：\n" + "\n".join(lines)
+        loc = e.location or ""
+        lines.append(f"- {wd} {e.startTime}-{e.endTime} 【{e.title}】{loc}")
+        card_events.append({
+            "title": e.title, "time": f"{e.startTime}-{e.endTime}",
+            "location": loc, "weekday": wd, "type": e.type or "course",
+        })
+    text = "整周课表：\n" + "\n".join(lines)
+    card = json.dumps({"type": "schedule", "title": "整周课表", "view": "week", "events": card_events}, ensure_ascii=False)
+    return f"{text}\n<!--CARD:{card}-->"
 
 
 @tool(description="查询今日课表。无需参数，自动根据当前日期判断星期几并返回对应日程。")
@@ -122,8 +128,18 @@ async def get_schedule_today() -> str:
     today_events = [e for e in events if e.weekday == today_wd]
     if not today_events:
         return f"{weekday_labels[today_wd]}暂无课程或日程安排。"
-    lines = [f"- {e.startTime}-{e.endTime} 【{e.title}】{e.location or ''}" for e in today_events]
-    return f"今日课表（{weekday_labels[today_wd]}）：\n" + "\n".join(lines)
+    card_events = []
+    lines = []
+    for e in today_events:
+        loc = e.location or ""
+        lines.append(f"- {e.startTime}-{e.endTime} 【{e.title}】{loc}")
+        card_events.append({
+            "title": e.title, "time": f"{e.startTime}-{e.endTime}",
+            "location": loc, "weekday": weekday_labels[today_wd], "type": e.type or "course",
+        })
+    text = f"今日课表（{weekday_labels[today_wd]}）：\n" + "\n".join(lines)
+    card = json.dumps({"type": "schedule", "title": f"今日课表（{weekday_labels[today_wd]}）", "view": "day", "events": card_events}, ensure_ascii=False)
+    return f"{text}\n<!--CARD:{card}-->"
 
 
 @tool(description="创建一个新的日程/课表事件。title: 事件标题；weekday: 英文星期(Monday~Sunday)；start_time: 开始时间(HH:MM)；end_time: 结束时间(HH:MM)；location: 地点(可选)；date: 具体日期YYYY-MM-DD(可选)；repeat: 重复模式 none/weekly/daily(可选，默认none)；event_type: 类型 course/meeting/exam/study/activity/other(可选，默认other)")

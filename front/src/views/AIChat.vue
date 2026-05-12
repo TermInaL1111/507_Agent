@@ -1201,7 +1201,16 @@ const fetchAIResponse = async (userMessage) => {
 
               if (typeof json.content === 'string') {
                 content = json.content;
-                const parsedObjectPayload = parseObjectFromJSONString(json.content);
+                // Extract embedded result_card from tool output (<!--CARD:...-->)
+                const cardMatch = content.match(/<!--CARD:(.*?)-->/);
+                if (cardMatch) {
+                  try {
+                    const card = JSON.parse(cardMatch[1]);
+                    updateAssistantResultCard(card);
+                    content = content.replace(/<!--CARD:.*?-->/, '');
+                  } catch {}
+                }
+                const parsedObjectPayload = parseObjectFromJSONString(content);
                 if (parsedObjectPayload) {
                   const extractedText = parsedObjectPayload.answer || parsedObjectPayload.response || parsedObjectPayload.content || '';
                   content = extractedText;

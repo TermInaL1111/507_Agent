@@ -178,10 +178,12 @@
     </el-dialog>
   </div>
   <AgentFab />
+  <AgentPanel context="课表日程页面" />
 </template>
 
 <script setup>
 import AgentFab from '../components/AgentFab.vue';
+import AgentPanel from '../components/AgentPanel.vue';
 import { computed, reactive, ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
