@@ -16,6 +16,7 @@ dependencies = [
     "starlette~=0.50.0",
     "pydantic-settings~=2.13.1",
     "langchain-community~=0.4.1",
+    "langchain-openai>=0.3.0",
     "python-jose~=3.5.0",
     "PyYAML~=6.0.3",
     "pydantic~=2.12.5",

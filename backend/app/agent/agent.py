@@ -5,7 +5,7 @@ from langsmith import traceable
 from typing import List, Optional, AsyncGenerator
 
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
-from langchain_community.chat_models import ChatTongyi
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import BaseTool
@@ -49,7 +49,7 @@ class AgentFactory:
 
     def __init__(
             self,
-            model: str = "qwen3-max",
+            model: str = "deepseek-v4-flash",
             api_key: Optional[str] = None,
             default_tools: Optional[List[BaseTool]] = None,
             default_middleware: Optional[List] = None,
@@ -99,15 +99,12 @@ class AgentFactory:
 
     def _create_chat_model(self, custom_model: Optional[str] = None):
         """内部方法：创建聊天模型实例"""
-        # 使用阿里云DashScope
-        api_key = os.getenv("ALIYUN_ACCESS_KEY_SECRET")
-        base_url = os.getenv("ALIYUN_BASE_URL")
-        
-        return ChatTongyi(
+        return ChatOpenAI(
             model=custom_model or self.model,
-            api_key=api_key,
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            base_url="https://api.deepseek.com/v1",
             streaming=True,
-            top_p=0.7,
+            temperature=0.7,
         )
 
     def _create_prompt(self, custom_system_prompt: Optional[str] = None) -> ChatPromptTemplate:

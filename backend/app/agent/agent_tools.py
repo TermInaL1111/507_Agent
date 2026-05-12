@@ -306,8 +306,9 @@ async def _extract_faq_from_documents() -> list[dict]:
         return []
 
     try:
-        from langchain_community.chat_models import ChatTongyi
-        llm = ChatTongyi(model="qwen3-max")
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(model="deepseek-v4-flash", api_key=os.getenv("DEEPSEEK_API_KEY"),
+                         base_url="https://api.deepseek.com/v1")
         prompt = (
             "从以下校园办事指南内容中，提取 5-10 个学生最常问的高频问题。"
             "每个问题应该简洁明确（15字以内），覆盖文档中提到的不同事务。"

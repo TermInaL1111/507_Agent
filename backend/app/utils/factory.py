@@ -3,7 +3,7 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 
-from langchain_community.chat_models.tongyi import ChatTongyi
+from langchain_openai import ChatOpenAI
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
@@ -27,11 +27,12 @@ class ChatModelFactory(BaseModelFactory):
     """聊天模型工厂"""
     def generator(self) -> Optional[Embeddings | BaseChatModel]:
         """生成模型"""
-        return ChatTongyi(
+        return ChatOpenAI(
             model=rag_config['chat_model_name'],
-            api_key=os.getenv("ALIYUN_ACCESS_KEY_SECRET"),
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            base_url="https://api.deepseek.com/v1",
             streaming=True,
-            top_p=0.7,
+            temperature=0.7,
         )
 
 
