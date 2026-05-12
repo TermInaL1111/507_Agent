@@ -259,6 +259,10 @@
               </div>
             </div>
 
+            <div v-if="message.role === 'assistant' && message.credibility" class="message-credibility" :class="'credibility--' + message.credibility.level">
+              {{ message.credibility.icon }} {{ message.credibility.label }}
+            </div>
+
             <div v-if="message.role === 'assistant' && message.sources?.length" class="message-sources">
               <button
                 v-for="(source, sourceIndex) in message.sources"
@@ -840,6 +844,13 @@ const updateAssistantSources = (payload) => {
   }
 };
 
+const updateAssistantCredibility = (payload) => {
+  if (!payload.credibility) return;
+  const currentMessage = messages.value[messages.value.length - 1];
+  if (!currentMessage || currentMessage.role !== 'assistant') return;
+  currentMessage.credibility = payload.credibility;
+};
+
 const getSourceName = (source, index = 0) => {
   return source?.doc_name || source?.file_name || source?.title || source?.name || `来源${index + 1}`;
 };
@@ -1163,6 +1174,7 @@ const fetchAIResponse = async (userMessage) => {
             case 'done':
               updateAssistantSources(json);
               updateAssistantResultCard(json);
+              updateAssistantCredibility(json);
 
               // 如果 steps 存在且 toolCalls 为空，从 steps 填充
               if (json.steps && json.steps.length) {
@@ -1589,6 +1601,17 @@ const loadSessionHistory = (session) => {
   0%, 100% { border-color: #a0cfff; }
   50% { border-color: #409eff; }
 }
+
+.message-credibility {
+  margin-top: 10px;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.credibility--high { background: #f0f9eb; color: #67c23a; }
+.credibility--medium { background: #fdf6ec; color: #e6a23c; }
+.credibility--low { background: #fef0f0; color: #f56c6c; }
 
 .message-sources {
   margin-top: 12px;

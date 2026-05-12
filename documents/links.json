@@ -1,0 +1,13 @@
+{
+  "note": "校园业务办理入口链接，后台可更新维护",
+  "entries": [
+    {"name": "教务管理系统", "url": "https://jwxt.cug.edu.cn", "keywords": ["选课", "成绩", "课表", "考试", "缓考"]},
+    {"name": "学生工作处", "url": "https://xsc.cug.edu.cn", "keywords": ["奖学金", "助学金", "困难补助", "助学贷款"]},
+    {"name": "图书馆", "url": "https://lib.cug.edu.cn", "keywords": ["借书", "文献", "数据库", "自习室"]},
+    {"name": "信息门户", "url": "https://portal.cug.edu.cn", "keywords": ["校园卡", "网费", "一卡通", "邮箱"]},
+    {"name": "校医院", "url": "https://hospital.cug.edu.cn", "keywords": ["医保", "体检", "就诊"]},
+    {"name": "保卫处", "url": "https://bwc.cug.edu.cn", "keywords": ["户籍", "停车", "报案"]},
+    {"name": "研究生院", "url": "https://graduate.cug.edu.cn", "keywords": ["考研", "保研", "导师", "学位"]},
+    {"name": "就业指导中心", "url": "https://career.cug.edu.cn", "keywords": ["招聘", "实习", "三方协议", "档案"]}
+  ]
+}

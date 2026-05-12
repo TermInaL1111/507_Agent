@@ -234,6 +234,19 @@ async def get_agent_response(
             "steps": []
         }
 
+def _credibility(sources: list) -> dict:
+    """Compute answer credibility based on source quality."""
+    if not sources:
+        return {"level": "low", "label": "仅供参考，请进一步核实",
+                "icon": "💡", "detail": "当前知识库未找到充分依据"}
+    has_high_score = any(s.get("score", 0) > 0.5 for s in sources)
+    if has_high_score:
+        return {"level": "high", "label": "依据学校正式文件生成",
+                "icon": "📌", "detail": f"基于 {len(sources)} 个来源"}
+    return {"level": "medium", "label": "部分依据，仅供参考",
+            "icon": "⚠️", "detail": f"基于 {len(sources)} 个来源，建议核实"}
+
+
 @traceable
 async def get_agent_stream_response(
         query: str,
@@ -276,7 +289,7 @@ async def get_agent_stream_response(
                 response = schedule_result.message
                 yield f"data: {json.dumps({'type': 'response', 'content': response, 'session_id': session_id}, ensure_ascii=False)}\n\n"
                 await sm.session_manager.add_message(session_id, user_id, query, response)
-                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': []}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': [], 'credibility': _credibility([])}, ensure_ascii=False)}\n\n"
                 return
 
         campus_result = handle_campus_ai_message(query)
@@ -284,7 +297,7 @@ async def get_agent_stream_response(
             payload = campus_result.payload() if campus_result.result_card else campus_result.message
             yield f"data: {json.dumps({'type': 'response', 'content': payload, 'session_id': session_id}, ensure_ascii=False)}\n\n"
             await sm.session_manager.add_message(session_id, user_id, query, campus_result_to_history(campus_result))
-            yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': []}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': [], 'credibility': _credibility([])}, ensure_ascii=False)}\n\n"
             return
 
         if is_training_program_query(query):
@@ -298,7 +311,7 @@ async def get_agent_stream_response(
                     }
                     yield f"data: {json.dumps({'type': 'response', 'content': payload, 'session_id': session_id}, ensure_ascii=False)}\n\n"
                     await sm.session_manager.add_message(session_id, user_id, query, payload["answer"])
-                    yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': sources}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': sources, 'credibility': _credibility(sources)}, ensure_ascii=False)}\n\n"
                     return
             except Exception as rag_error:
                 logger.warning(f"【Agent流式响应】培养方案RAG优先检索失败，回退Agent流程: {rag_error}")
@@ -393,7 +406,7 @@ async def get_agent_stream_response(
         logger.info(f"【Agent流式响应】添加到会话历史成功")
 
         # Send done — include card so frontend can render immediately
-        done_payload = {'type': 'done', 'session_id': session_id, 'sources': sources, 'steps': steps}
+        done_payload = {'type': 'done', 'session_id': session_id, 'sources': sources, 'steps': steps, 'credibility': _credibility(sources)}
         if result_card:
             done_payload['result_card'] = result_card
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
