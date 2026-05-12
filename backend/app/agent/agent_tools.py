@@ -156,6 +156,17 @@ async def create_schedule_event(
     )
 
     async with AsyncSessionLocal() as db:
+        # Check for exact duplicate (same title + weekday + start_time + end_time)
+        existing = await svc_list_week_events(db, user_id)
+        dup = [e for e in existing
+               if e.title == title and e.weekday == weekday
+               and e.startTime == start_time and e.endTime == end_time]
+        if dup:
+            wd_labels = {"Monday": "周一", "Tuesday": "周二", "Wednesday": "周三",
+                         "Thursday": "周四", "Friday": "周五", "Saturday": "周六", "Sunday": "周日"}
+            wd = wd_labels.get(weekday, weekday)
+            return f"⏭ 已跳过：相同安排已存在「{title}」{wd} {start_time}-{end_time}，未重复添加。"
+
         conflicts = await svc_find_conflicts(db, user_id, weekday, start_time, end_time)
         conflict_info = ""
         if conflicts:

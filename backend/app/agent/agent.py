@@ -367,6 +367,9 @@ async def get_agent_stream_response(
                     except (TypeError, ValueError):
                         tool_output_serializable = str(tool_output_serializable)
 
+                    # Send thought (ReAct pattern: Thought → Action → Observation)
+                    thought_summary = action.log[:200] if action.log else ""
+                    yield f"data: {json.dumps({'type': 'thought', 'content': thought_summary, 'tool': action.tool}, ensure_ascii=False)}\n\n"
                     yield f"data: {json.dumps({'type': 'tool_call', 'tool': action.tool, 'args': tool_input_serializable}, ensure_ascii=False)}\n\n"
                     yield f"data: {json.dumps({'type': 'tool_result', 'tool': action.tool, 'result': tool_output_serializable}, ensure_ascii=False)}\n\n"
 

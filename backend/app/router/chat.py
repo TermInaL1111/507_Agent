@@ -213,8 +213,20 @@ async def upload_schedule_pdf(
     set_agent_user_context(user_id)
     created_events = []
     async with AsyncSessionLocal() as db:
+        # Load existing events once for dedup check
+        from app.services.schedule_service import list_week_events as svc_list_events
+        existing = await svc_list_events(db, user_id)
+        skipped = 0
         for item in parsed_items:
             try:
+                # Check for duplicate
+                dup = [e for e in existing
+                       if e.title == item["title"] and e.weekday == item["weekday"]
+                       and e.startTime == item["startTime"] and e.endTime == item["endTime"]]
+                if dup:
+                    skipped += 1
+                    continue
+
                 payload = ScheduleEventCreate(
                     title=item["title"],
                     type="course",
@@ -229,6 +241,7 @@ async def upload_schedule_pdf(
                     remark=item.get("remark", f"从 {source_file.original_filename} 导入"),
                 )
                 event = await svc_create_event(db, user_id, payload)
+                existing.append(event)
                 created_events.append({
                     "id": event.id,
                     "title": event.title,
@@ -247,6 +260,7 @@ async def upload_schedule_pdf(
         "text_preview": text_preview,
         "events": created_events,
         "events_count": len(created_events),
+        "duplicates_skipped": skipped,
         "warning": warning or None,
     })
 

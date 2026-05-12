@@ -265,8 +265,12 @@
                   <el-icon class="tool-call-expand"><component :is="tc._expanded ? ArrowUp : ArrowDown" /></el-icon>
                 </div>
                 <div v-if="tc._expanded" class="tool-call-body">
+                  <div v-if="tc.thought" class="tool-call-thought">
+                    <span class="tool-call-meta-label">🧠 思考：</span>
+                    <span>{{ tc.thought }}</span>
+                  </div>
                   <div v-if="tc.args && Object.keys(tc.args).length" class="tool-call-args">
-                    <span class="tool-call-meta-label">参数：</span>
+                    <span class="tool-call-meta-label">📥 参数：</span>
                     <code>{{ formatArgs(tc.args) }}</code>
                   </div>
                   <div v-if="tc.result" class="tool-call-result">
@@ -1149,7 +1153,29 @@ const fetchAIResponse = async (userMessage) => {
           switch (json.type) {
             case 'step':
               break;
+            case 'thought': {
+              const curMsg = messages.value[messages.value.length - 1];
+              if (curMsg && curMsg.role === 'assistant') {
+                if (!curMsg.toolCalls) curMsg.toolCalls = [];
+                // Attach thought to the upcoming running tool call
+                curMsg.toolCalls.push({ tool: json.tool, args: {}, result: null, status: 'running', thought: json.content });
+              }
+              break;
+            }
             case 'tool_call': {
+              const curMsg = messages.value[messages.value.length - 1];
+              if (curMsg && curMsg.role === 'assistant') {
+                if (!curMsg.toolCalls) curMsg.toolCalls = [];
+                // Merge with pending thought entry if exists
+                const pending = curMsg.toolCalls.find(tc => tc.status === 'running' && !tc.result && tc.thought);
+                if (pending && pending.tool === json.tool) {
+                  pending.args = json.args;
+                } else {
+                  curMsg.toolCalls.push({ tool: json.tool, args: json.args, result: null, status: 'running' });
+                }
+              }
+              break;
+            }
               const curMsg = messages.value[messages.value.length - 1];
               if (curMsg && curMsg.role === 'assistant') {
                 if (!curMsg.toolCalls) curMsg.toolCalls = [];
@@ -1635,6 +1661,8 @@ const loadSessionHistory = (session) => {
 .tool-call-expand { font-size: 12px; color: #c0c4cc; flex-shrink: 0; }
 
 .tool-call-body { padding: 6px 10px 8px; border-top: 1px dashed #e4e7ed; }
+.tool-call-thought { margin: 4px 0; font-size: 12px; color: #606266; line-height: 1.5; }
+.tool-call-thought span { color: #606266; }
 .tool-call-args, .tool-call-result { margin: 4px 0; }
 .tool-call-meta-label { color: #909399; font-size: 11px; }
 .tool-call-args code { font-size: 11px; color: #e6a23c; background: #fdf6ec; padding: 2px 4px; border-radius: 3px; word-break: break-all; }
