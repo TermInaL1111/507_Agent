@@ -85,9 +85,11 @@
       </div>
     </section>
   </div>
+  <AgentFab />
 </template>
 
 <script setup>
+import AgentFab from '../components/AgentFab.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Aim, Guide, Refresh, Search } from '@element-plus/icons-vue';

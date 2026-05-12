@@ -177,9 +177,11 @@
       </template>
     </el-dialog>
   </div>
+  <AgentFab />
 </template>
 
 <script setup>
+import AgentFab from '../components/AgentFab.vue';
 import { computed, reactive, ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
