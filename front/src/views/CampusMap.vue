@@ -19,6 +19,8 @@
 
       <el-segmented v-model="activeType" :options="typeOptions" class="type-filter" />
 
+      <el-segmented v-model="activeCampus" :options="campusOptions" class="campus-filter" />
+
       <el-select v-model="routeStartId" clearable filterable placeholder="选择站内路线起点；留空则使用当前位置" class="route-start-select">
         <el-option
           v-for="location in locations"
@@ -90,7 +92,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router';
 import { Aim, Guide, Refresh, Search } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { campusLocationTypes, campusTypeLabels } from '../data/campusLocations';
+import { campusLocationTypes, campusTypeLabels, campusList } from '../data/campusLocations';
 import { getAmapConfigError, loadAmap } from '../services/amapService';
 import {
   fetchCampusLocations,
@@ -103,6 +105,10 @@ const route = useRoute();
 const mapContainer = ref(null);
 const keyword = ref('');
 const activeType = ref('all');
+const activeCampus = ref('all');
+const campusOptions = computed(() => [
+  ...campusList.map(c => ({ label: c.label, value: c.key }))
+]);
 const locations = ref([]);
 const selectedLocation = ref(null);
 const loadingLocations = ref(false);
@@ -123,7 +129,7 @@ let geolocation = null;
 let markers = [];
 let routeLine = null;
 
-const filteredLocations = computed(() => searchCampusLocations(locations.value, keyword.value, activeType.value));
+const filteredLocations = computed(() => searchCampusLocations(locations.value, keyword.value, activeType.value, activeCampus.value));
 
 const buildInfoContent = (location) => `
   <div class="campus-info-window">

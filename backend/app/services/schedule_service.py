@@ -39,7 +39,10 @@ def validate_event_payload(payload: ScheduleEventCreate) -> None:
         raise ValueError("startTime must be earlier than endTime")
 
 
-async def list_week_events(db: AsyncSession, user_id: str) -> list[ScheduleEventResponse]:
+async def list_week_events(db: AsyncSession, user_id: str, week_offset: int = 0) -> list[ScheduleEventResponse]:
+    # week_offset is accepted for future date-based filtering
+    # Currently events are identified by weekday pattern, applied to any week
+    import datetime
     result = await db.execute(
         select(ScheduleEvent)
         .where(ScheduleEvent.user_id == user_id)

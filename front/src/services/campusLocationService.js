@@ -15,11 +15,12 @@ export const fetchCampusLocations = async () => {
   }
 };
 
-export const searchCampusLocations = (locations, keyword, type = 'all') => {
+export const searchCampusLocations = (locations, keyword, type = 'all', campus = 'all') => {
   const normalized = keyword.trim().toLowerCase();
   return locations.filter((location) => {
     const typeMatched = type === 'all' || location.type === type;
-    if (!typeMatched) return false;
+    const campusMatched = campus === 'all' || location.campus === campus;
+    if (!typeMatched || !campusMatched) return false;
     if (!normalized) return true;
 
     const fields = [

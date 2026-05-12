@@ -6,9 +6,18 @@
         <p>统一管理课程、活动、自习、考试和待办安排</p>
       </div>
       <div class="header-actions">
+        <el-button-group>
+          <el-button :icon="ArrowLeft" :disabled="weekOffset <= 0" @click="weekOffset--; loadEvents()" />
+          <el-button disabled>{{ weekLabel }}</el-button>
+          <el-button :icon="ArrowRight" @click="weekOffset++; loadEvents()" />
+        </el-button-group>
         <el-segmented v-model="viewMode" :options="viewOptions" />
         <el-button :icon="Refresh" @click="loadEvents">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreateDialog()">新增安排</el-button>
+        <el-button @click="router.push('/aichat')">
+          <el-icon><ChatDotRound /></el-icon>
+          AI 对话
+        </el-button>
       </div>
     </div>
 
@@ -174,7 +183,7 @@
 import { computed, reactive, ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Delete, Plus, Refresh } from '@element-plus/icons-vue';
+import { ArrowLeft, ArrowRight, ChatDotRound, Delete, Plus, Refresh } from '@element-plus/icons-vue';
 import { useUserStore } from '../store/user';
 
 const router = useRouter();
@@ -184,6 +193,17 @@ const dialogVisible = ref(false);
 const saving = ref(false);
 const conflicts = ref([]);
 const viewMode = ref('gantt');
+const weekOffset = ref(0);
+const weekLabel = computed(() => {
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + weekOffset.value * 7);
+  const monday = new Date(target);
+  monday.setDate(target.getDate() - target.getDay() + 1);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = d => `${d.getMonth() + 1}/${d.getDate()}`;
+  return weekOffset.value === 0 ? '本周' : `${fmt(monday)}-${fmt(sunday)}`;
+});
 
 const viewOptions = [
   { label: '今日甘特图', value: 'gantt' },
@@ -344,7 +364,10 @@ const authHeaders = () => ({
 
 const loadEvents = async () => {
   if (!ensureLogin()) return;
-  const response = await fetch('/api/schedule/week', { headers: authHeaders() });
+  const params = new URLSearchParams();
+  if (weekOffset.value) params.set('week_offset', weekOffset.value);
+  const url = `/api/schedule/week?${params.toString()}`;
+  const response = await fetch(url, { headers: authHeaders() });
   if (!response.ok) {
     ElMessage.error('加载时间表失败');
     return;

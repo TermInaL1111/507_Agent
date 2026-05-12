@@ -15,8 +15,9 @@ schedule_router = APIRouter(prefix="/api/schedule", tags=["schedule"])
 async def get_week_schedule(
         user_id: str = Depends(get_current_user_id),
         db: AsyncSession = Depends(get_db),
+        week_offset: int = 0,
 ):
-    events = await list_week_events(db, user_id)
+    events = await list_week_events(db, user_id, week_offset=week_offset)
     return success_response(data={"events": events})
 
 

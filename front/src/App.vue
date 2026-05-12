@@ -30,11 +30,6 @@
           <span>校园导航</span>
         </el-menu-item>
 
-        <el-menu-item index="/aichat" @click="openDocChat">
-          <el-icon><Document /></el-icon>
-          <span>文书辅助</span>
-        </el-menu-item>
-
         <el-menu-item index="/sessions">
           <el-icon><ChatLineSquare /></el-icon>
           <span>会话记录</span>
@@ -108,10 +103,6 @@ const activeMenu = computed(() => {
   return route.path
 })
 
-// 处理下拉菜单命令
-const openDocChat = () => {
-  router.push({ path: '/aichat', query: { prompt: '帮我写一份文书' } });
-};
 
 const handleCommand = (command) => {
   switch (command) {
