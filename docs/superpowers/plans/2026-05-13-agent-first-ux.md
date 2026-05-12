@@ -269,7 +269,10 @@ cd /root/zhsx && docker-compose build backend frontend 2>&1 | tail -5
 
 ```bash
 docker rm -f 507-agent-backend 507-agent-frontend 2>/dev/null
-docker run -d --name 507-agent-backend --network zhsx_default -e MYSQL_USER=agent_user -e "MYSQL_PASSWORD=PW0xgIeTGfbfCyQte0iiQjYW2+bZV/A+" -e MYSQL_DATABASE=chat_history -e MYSQL_HOST=507-agent-mysql -e MYSQL_PORT=3306 -e REDIS_HOST=507-agent-redis -e REDIS_PORT=6379 -e REDIS_DB=3 -e "DJANGO_API_URL=http://507-agent-django-user:8001" -e "SECRET_KEY=rZH1wqxtuDOJe39MYlr+WK39yQUWURVI+DX85Qyq+L2DKNSo07CCOfg9wmP0+tLg" -e ALGORITHM=HS256 -e "DASHSCOPE_API_KEY=sk-9d53bfd63d494da585aa47a79b1042cd" -e "DEEPSEEK_API_KEY=sk-903a37cb140049729e5d3eb1d0b95bac" -e "AMAP_WEB_SERVICE_KEY=2ca818bd30b64d3befb29b94ce457d49" -e SKIP_RERANKER_DOWNLOAD=true -e DOCUMENTS_DIR=/app/documents -v 507_agent_backend_data:/app/data -v "/root/zhsx/Training Program:/Training Program:ro" -v /root/zhsx/documents:/app/documents:ro zhsx_backend:latest
+# See .env.example for required environment variables. Deploy with docker-compose or source .env first.
+docker rm -f 507-agent-backend 507-agent-frontend 2>/dev/null
+docker run -d --name 507-agent-backend --network zhsx_default --env-file .env -v 507_agent_backend_data:/app/data -v "./Training Program:/Training Program:ro" -v ./documents:/app/documents:ro zhsx_backend:latest
+docker run -d --name 507-agent-frontend --network zhsx_default -p 80:80 zhsx_frontend:latest
 docker run -d --name 507-agent-frontend --network zhsx_default -p 80:80 zhsx_frontend:latest
 ```
 

@@ -15,6 +15,8 @@ from app.agent.agent_tools import (
     create_schedule_event,
     doc_preview,
     faq_recommend,
+    extract_time_nodes,
+    get_campus_service_link,
     recall_user_context,
     remember_user_context,
     get_campus_route,
@@ -86,6 +88,8 @@ class AgentFactory:
             recommend_courses,
             doc_preview,
             faq_recommend,
+            extract_time_nodes,
+            get_campus_service_link,
             recall_user_context,
             remember_user_context,
         ]

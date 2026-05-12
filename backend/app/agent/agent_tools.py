@@ -185,9 +185,13 @@ async def create_schedule_event(
 
         conflicts = await svc_find_conflicts(db, user_id, weekday, start_time, end_time)
         conflict_info = ""
+        conflict_card = ""
         if conflicts:
             conflict_list = "；".join(f"【{c.title}】{c.startTime}-{c.endTime}" for c in conflicts)
             conflict_info = f"\n⚠ 时间冲突提醒：{conflict_list}"
+            checks = [{"name": f"{c.title} ({c.startTime}-{c.endTime})", "status": "冲突",
+                       "detail": f"与你即将添加的「{title}」时间重叠", "suggestion": "你可以选择其他时间，或保留冲突"} for c in conflicts]
+            conflict_card = f"\n<!--CARD:{json.dumps({'type': 'check', 'title': '时间冲突检测', 'status': '发现{len(conflicts)}个冲突', 'checks': checks}, ensure_ascii=False)}-->"
 
         event = await svc_create_event(db, user_id, payload)
 
@@ -198,6 +202,8 @@ async def create_schedule_event(
     if event.location:
         result += f" @{event.location}"
     result += conflict_info
+    if conflict_card:
+        result += conflict_card
     return result
 
 
@@ -256,6 +262,97 @@ async def recommend_courses(strategy: str = "全面发展") -> str:
     except Exception as e:
         logger.warning(f"选课推荐失败: {e}")
         return f"生成选课推荐时出现错误，请稍后重试。"
+
+
+# ── Campus service links tool ──────────────────────────────────
+
+_LINKS_CACHE = None
+
+def _load_links() -> list[dict]:
+    global _LINKS_CACHE
+    if _LINKS_CACHE is None:
+        p = Path(os.getenv("DOCUMENTS_DIR", "/app/documents")) / "links.json"
+        if p.exists():
+            _LINKS_CACHE = json.loads(p.read_text(encoding="utf-8")).get("entries", [])
+        else:
+            _LINKS_CACHE = []
+    return _LINKS_CACHE
+
+
+@tool(description="""查询校园业务办理入口链接。
+keyword: 业务关键词，如'奖学金'、'选课'、'缓考'、'医保'等。
+返回匹配的官方系统入口链接和进入路径。当用户询问"在哪里办理"、"怎么申请"等需要跳转外部系统的事项时调用。""")
+async def get_campus_service_link(keyword: str) -> str:
+    entries = _load_links()
+    if not entries:
+        return "暂无校园服务链接配置。"
+    kw = keyword.strip().lower()
+    matched = []
+    for e in entries:
+        if kw in e["name"].lower() or any(kw in k.lower() for k in e.get("keywords", [])):
+            matched.append(e)
+        elif any(e["name"].lower().find(w) >= 0 for w in kw.split()):
+            matched.append(e)
+
+    if not matched:
+        return f"未找到「{keyword}」相关的线上办理入口。建议联系所在学院教务办咨询。"
+    lines = []
+    for e in matched[:3]:
+        lines.append(f"- {e['name']}：{e['url']}")
+    card = json.dumps({"type": "recommendation", "title": "业务办理入口", "strategy": keyword,
+                       "recommendations": [{"title": e["name"], "reason": e["url"], "score": "官方渠道"} for e in matched[:3]]},
+                      ensure_ascii=False)
+    return "找到以下办理入口：\n" + "\n".join(lines) + f"\n<!--CARD:{card}-->"
+
+
+# ── Time node extraction tool ──────────────────────────────────
+
+@tool(description="""从对话中提取重要时间节点，供用户确认是否加入日程。
+conversation_text: 最近的对话内容，从中提取有时间敏感的事项。
+返回提取到的时间节点列表，用户确认后可加入课表。
+当用户提到报名、申请、考试、活动、讲座、面试等有时间约束的事项时调用。""")
+async def extract_time_nodes(conversation_text: str) -> str:
+    if not conversation_text or len(conversation_text) < 10:
+        return "对话内容过短，无法提取时间节点。"
+
+    try:
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(model="deepseek-chat", api_key=os.getenv("DEEPSEEK_API_KEY"),
+                         base_url="https://api.deepseek.com/v1")
+        prompt = f"""从以下对话中提取有时间敏感的事项。返回 JSON 数组，每个事项包含：
+- title: 事项名称（简短）
+- date: 日期 YYYY-MM-DD（如无法确定填"待确认"）
+- time: 时间 HH:MM（如无法确定填"待确认"）
+- type: 类型（报名/申请/考试/活动/讲座/面试/其他）
+- source: 来源内容摘要
+如果没有找到时间敏感事项，返回空数组 []。
+
+对话内容：
+{conversation_text[:2000]}
+"""
+        resp = await llm.ainvoke(prompt)
+        text = resp.content.strip()
+        # Extract JSON array
+        import re as _re
+        match = _re.search(r'\[.*\]', text, _re.DOTALL)
+        if not match:
+            return "未在对话中识别到明确的时间节点。"
+        items = json.loads(match.group(0))
+        if not items:
+            return "未在对话中识别到明确的时间节点。"
+
+        card = json.dumps({"type": "schedule", "title": "识别到的时间节点", "view": "day",
+                           "events": [{"title": it.get("title",""), "time": it.get("time",""), "weekday": it.get("date",""),
+                                       "type": it.get("type","other"), "location": it.get("source","")[:30]} for it in items]},
+                          ensure_ascii=False)
+        lines = ["识别到以下时间节点，请确认是否加入课表："]
+        for it in items:
+            lines.append(f"- {it.get('date','?')} {it.get('time','?')} 【{it.get('title','')}】{it.get('type','')}")
+        return "\n".join(lines) + f"\n回复"确认加入"或"忽略"\n<!--CARD:{card}-->"
+
+    except Exception as e:
+        logger.warning(f"Time node extraction failed: {e}")
+        return f"时间节点提取失败: {e}"
 
 
 # ── Memory tools (HelloAgents: Memory as Tool) ─────────────────
