@@ -306,7 +306,26 @@ async def get_agent_stream_response(
             except Exception as rag_error:
                 logger.warning(f"【Agent流式响应】培养方案RAG优先检索失败，回退Agent流程: {rag_error}")
 
-        agent_executor = agent_factory.create_agent_executor(custom_tools=custom_tools, **kwargs)
+        # Inject user context into system prompt for personalized responses
+        user_context = ""
+        try:
+            from app.utils.django_user_client import fetch_user_profile
+            profile = fetch_user_profile(user_id)
+            if profile:
+                parts = []
+                if profile.get("name"): parts.append(f"姓名：{profile['name']}")
+                if profile.get("student_id"): parts.append(f"学号：{profile['student_id']}")
+                if profile.get("class_name"): parts.append(f"班级：{profile['class_name']}")
+                if parts:
+                    user_context = "## 当前用户\n" + "，".join(parts) + "。\n请在回答时使用用户的姓名和学号，提供个性化服务。\n\n"
+        except Exception:
+            pass
+
+        agent_executor = agent_factory.create_agent_executor(
+            custom_tools=custom_tools,
+            custom_system_prompt=user_context + agent_factory.default_system_prompt if user_context else None,
+            **kwargs,
+        )
 
         # 流式执行
         full_response = []

@@ -255,11 +255,25 @@
               <div
                 v-for="(tc, tcIdx) in message.toolCalls"
                 :key="`tc-${index}-${tcIdx}`"
-                class="tool-call-chip"
+                class="tool-call-item"
                 :class="{ 'tool-call--running': tc.status === 'running', 'tool-call--done': tc.status === 'done' }"
               >
-                <span class="tool-call-icon">{{ tc.status === 'running' ? '⏳' : '✅' }}</span>
-                <span class="tool-call-label">{{ tc.tool }}</span>
+                <div class="tool-call-header" @click="tc._expanded = !tc._expanded">
+                  <span class="tool-call-icon">{{ tc.status === 'running' ? '⏳' : '✅' }}</span>
+                  <span class="tool-call-label">{{ formatToolName(tc.tool) }}</span>
+                  <span class="tool-call-desc">{{ formatToolDesc(tc) }}</span>
+                  <el-icon class="tool-call-expand"><component :is="tc._expanded ? ArrowUp : ArrowDown" /></el-icon>
+                </div>
+                <div v-if="tc._expanded" class="tool-call-body">
+                  <div v-if="tc.args && Object.keys(tc.args).length" class="tool-call-args">
+                    <span class="tool-call-meta-label">参数：</span>
+                    <code>{{ formatArgs(tc.args) }}</code>
+                  </div>
+                  <div v-if="tc.result" class="tool-call-result">
+                    <span class="tool-call-meta-label">结果：</span>
+                    <span>{{ formatResult(tc.result) }}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -363,7 +377,7 @@
 import { computed, ref, onMounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { Link, Loading, User, ChatDotRound, ChatLineSquare, Promotion } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowUp, Link, Loading, Promotion } from '@element-plus/icons-vue';
 import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
@@ -853,6 +867,35 @@ const updateAssistantCredibility = (payload) => {
   const currentMessage = messages.value[messages.value.length - 1];
   if (!currentMessage || currentMessage.role !== 'assistant') return;
   currentMessage.credibility = payload.credibility;
+};
+
+const TOOL_LABELS = {
+  get_schedule_today: '查今日课表', get_schedule_week: '查整周课表',
+  create_schedule_event: '添加日程', search_campus_locations_tool: '搜地点',
+  get_campus_route: '规划路线', get_training_program: '查培养方案',
+  recommend_courses: '选课建议', rag_summary_tools: '检索知识库',
+  doc_preview: '生成文书', faq_recommend: '推荐问题',
+  what_time_is_now: '获取时间', get_weather_tools: '查天气',
+};
+
+const formatToolName = (tool) => TOOL_LABELS[tool] || tool;
+const formatToolDesc = (tc) => {
+  if (tc.status === 'running') return '处理中...';
+  if (tc.result) {
+    const r = typeof tc.result === 'string' ? tc.result : '';
+    return r.length > 60 ? r.slice(0, 60) + '...' : r;
+  }
+  return '';
+};
+const formatArgs = (args) => {
+  try { return JSON.stringify(args, null, 0).slice(0, 200); } catch { return String(args).slice(0, 200); }
+};
+const formatResult = (result) => {
+  if (typeof result === 'string') {
+    try { const j = JSON.parse(result); if (j.type) return j.type + ' - ' + (j.display_name || ''); } catch {}
+    return result.slice(0, 200);
+  }
+  return String(result).slice(0, 200);
 };
 
 const getSourceName = (source, index = 0) => {
@@ -1566,11 +1609,36 @@ const loadSessionHistory = (session) => {
 }
 
 .tool-calls {
-  margin-top: 10px;
+  margin-top: 8px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
 }
+
+.tool-call-item {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.tool-call--running { border-color: #409eff; background: #ecf5ff; }
+.tool-call--done { border-color: #67c23a; background: #f0f9eb; }
+
+.tool-call-header {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  cursor: pointer; user-select: none;
+}
+.tool-call-header:hover { background: rgba(0,0,0,.03); }
+.tool-call-icon { font-size: 13px; flex-shrink: 0; }
+.tool-call-label { font-weight: 600; color: #303133; flex-shrink: 0; }
+.tool-call-desc { color: #909399; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-call-expand { font-size: 12px; color: #c0c4cc; flex-shrink: 0; }
+
+.tool-call-body { padding: 6px 10px 8px; border-top: 1px dashed #e4e7ed; }
+.tool-call-args, .tool-call-result { margin: 4px 0; }
+.tool-call-meta-label { color: #909399; font-size: 11px; }
+.tool-call-args code { font-size: 11px; color: #e6a23c; background: #fdf6ec; padding: 2px 4px; border-radius: 3px; word-break: break-all; }
+.tool-call-result span { font-size: 12px; color: #606266; }
 
 .tool-call-chip {
   display: inline-flex;
