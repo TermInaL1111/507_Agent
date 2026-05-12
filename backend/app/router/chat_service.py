@@ -105,9 +105,9 @@ class ChatService:
             "category": source_file.category,
         }
 
-        # 处理文件并存储到向量数据库
-        await store.get_document(files=[file], user_id=user_id, file_records=[file_metadata])
-
+        result = await store.get_document(files=[file], user_id=user_id, file_records=[file_metadata])
+        if result["skipped"]:
+            return f"{file.filename}（文件已存在，跳过导入）"
         return file.filename
 
     async def handle_add_vector_multiple(self, files: List[UploadFile], user_id: str) -> List[str]:

@@ -44,9 +44,15 @@ class VectorStoreService:
     """向量数据库服务"""
     def __init__(self):
         persist_dir = get_abstract_path(chroma_config['persist_directory'])
-        # 使用同步 Chroma, 在调用时用 to_thread 包裹
+        # kb_shared — 管理员导入的共享知识库 (RAG 默认检索)
         self.vectors_store = Chroma(
-            collection_name=chroma_config['collection_name'],
+            collection_name="kb_shared",
+            embedding_function=embed_model,
+            persist_directory=persist_dir,
+        )
+        # kb_personal — 用户个人上传文件 (课程PDF等私密文档)
+        self.personal_store = Chroma(
+            collection_name="kb_personal",
             embedding_function=embed_model,
             persist_directory=persist_dir,
         )
@@ -57,7 +63,9 @@ class VectorStoreService:
             embedding_model=embed_model
         )
 
-    async def hybrid_search(self, query: str) -> list[Document]:
+    async def hybrid_search(self, query: str, kb_type: str = "shared") -> list[Document]:
+        """Hybrid search, defaults to kb_shared (admin knowledge base)."""
+        store = self._select_store(kb_type)
         article = detect_article_query(query)
         prefer_training_program = is_training_program_query(query)
         fetch_k = int(chroma_config.get("fetch_k", chroma_config.get("k", 5)))
@@ -65,13 +73,13 @@ class VectorStoreService:
         keyword_top_k = int(chroma_config.get("keyword_top_k", 10))
 
         vector_results = await asyncio.to_thread(
-            self.vectors_store.similarity_search_with_score,
+            store.similarity_search_with_score,
             query,
             fetch_k,
         )
         if prefer_training_program:
             training_vector_results = await asyncio.to_thread(
-                self.vectors_store.similarity_search_with_score,
+                store.similarity_search_with_score,
                 query,
                 max(fetch_k, 50),
                 filter={"source": "training_program"},
@@ -79,7 +87,7 @@ class VectorStoreService:
             vector_results = list(vector_results) + list(training_vector_results)
 
         scored_docs: dict[str, tuple[Document, float]] = {}
-        major_candidates = await self._detect_training_program_majors(query) if prefer_training_program else []
+        major_candidates = await self._detect_training_program_majors(query, kb_type) if prefer_training_program else []
 
         def doc_key(doc: Document) -> str:
             metadata = doc.metadata or {}
@@ -104,7 +112,7 @@ class VectorStoreService:
                 scored_docs[key] = (doc, score)
 
         if article or prefer_training_program:
-            all_docs = await self._get_all_documents()
+            all_docs = await self._get_all_documents(kb_type)
             query_for_terms = (query or "").replace(article, "") if article else (query or "")
             query_terms = [
                 term for term in re.split(r"[\s，。；：、,.!?！？（）()《》【】]+", query_for_terms)
@@ -140,8 +148,8 @@ class VectorStoreService:
         sorted_docs = sorted(scored_docs.values(), key=lambda item: item[1], reverse=True)
         return [doc for doc, _ in sorted_docs[:final_k]]
 
-    async def _detect_training_program_majors(self, query: str) -> list[str]:
-        all_docs = await self._get_all_documents()
+    async def _detect_training_program_majors(self, query: str, kb_type: str = "shared") -> list[str]:
+        all_docs = await self._get_all_documents(kb_type)
         majors = sorted({
             str((doc.metadata or {}).get("major") or "")
             for doc in all_docs
@@ -178,14 +186,10 @@ class VectorStoreService:
         else:
             return None
 
-    async def _get_all_documents(self) -> list[Document]:
-        """
-        获取向量库中的所有文档
-        :return: 文档列表
-        """
-        # 使用同步操作获取所有文档
+    async def _get_all_documents(self, kb_type: str = "shared") -> list[Document]:
+        store = self._select_store(kb_type)
         all_docs = await asyncio.to_thread(
-            self.vectors_store.get,
+            store.get,
             include=['documents', 'metadatas']
         )
         # 构建Document对象列表
@@ -287,20 +291,13 @@ class VectorStoreService:
             await f.write(md5_hex + '\n')
 
     async def delete_user_documents(self, user_id: str):
-        """
-        删除指定用户的所有文档
-        :param user_id: 用户ID
-        """
-        try:
-            # 使用同步操作删除文档
-            await asyncio.to_thread(
-                self.vectors_store.delete, 
-                where={"user_id": user_id}
-            )
-            logger.info(f"【向量数据库】已删除用户 {user_id} 的所有文档")
-        except Exception as e:
-            logger.error(f"【向量数据库】删除用户 {user_id} 的文档时出错: {e}")
-            raise
+        """删除指定用户在所有集合中的文档"""
+        for store in (self.vectors_store, self.personal_store):
+            try:
+                await asyncio.to_thread(store.delete, where={"user_id": user_id})
+                logger.info(f"【向量数据库】已删除用户 {user_id} 的文档")
+            except Exception as e:
+                logger.error(f"【向量数据库】删除用户 {user_id} 文档时出错: {e}")
 
     async def get_file_document(self, read_path: str) -> list[Document]:
         """异步加载文件"""
@@ -317,18 +314,21 @@ class VectorStoreService:
         else:
             return []
 
+    def _select_store(self, kb_type: str = "shared"):
+        """Return the correct Chroma collection based on kb_type."""
+        return self.personal_store if kb_type == "personal" else self.vectors_store
+
     async def get_document(self, files: list = None, user_id: str = None, file_records: list[dict] = None):
         """
-        处理文档并将其转为向量存入向量数据库
-        :param files: 上传的文件列表，如果为None则从数据文件夹读取
-        :param user_id: 用户ID，用于标记文档的所有者
+        处理文档并将其转为向量存入向量数据库。
+        kb_type="personal" → kb_personal 集合 (用户私密文档)
+        其他 → kb_shared 集合 (共享知识库)
+        返回 {"imported": [...], "skipped": [...]}
         """
-        # 确定要处理的文件列表
+        result = {"imported": [], "skipped": []}
         file_items = []
         if files:
-            # 处理上传的文件
             for file in files:
-                # 创建临时文件，使用asyncio.to_thread 包裹
                 temp_file_path = await asyncio.to_thread(
                     tempfile.NamedTemporaryFile,
                     delete=False,
@@ -336,59 +336,48 @@ class VectorStoreService:
                 )
                 content = await file.read()
                 await asyncio.to_thread(temp_file_path.write, content)
-                file_items.append({
-                    "path": temp_file_path.name,
-                    "metadata": (file_records or [{}])[len(file_items)] if file_records and len(file_records) > len(file_items) else {}
-                })
+                idx = len(file_items)
+                meta = (file_records or [{}])[idx] if file_records and len(file_records) > idx else {}
+                file_items.append({"path": temp_file_path.name, "metadata": meta})
         else:
-            # 从数据文件夹读取文件
-            allowed_file_path: tuple[str] = await listdir_allowed_type(
+            allowed_file_path = await listdir_allowed_type(
                 chroma_config['data_path'],
                 tuple(chroma_config['allow_knowledge_file_types'])
             )
-            file_items = [{"path": file_path, "metadata": {}} for file_path in allowed_file_path]
+            file_items = [{"path": p, "metadata": {}} for p in allowed_file_path]
 
         for file_item in file_items:
             file_path = file_item["path"]
             source_metadata = file_item.get("metadata") or {}
-            # 2. 计算MD5
+            fname = os.path.basename(file_path)
             md5_hex = await get_file_md5_hex(file_path)
-            if await self.check_md5_hex(md5_hex) and not source_metadata.get("file_id"):
-                logger.info(f"【向量数据库】文件 {file_path} 的md5值 {md5_hex} 已存在，跳过")
-                # 如果是临时文件，删除
+            if await self.check_md5_hex(md5_hex):
+                logger.info(f"【向量数据库】{fname} MD5 重复，跳过")
+                result["skipped"].append(fname)
                 if files:
                     try:
                         os.unlink(file_path)
-                    except:
+                    except Exception:
                         pass
                 continue
 
             try:
-                # 3. 加载文档
-                document: list[Document] = await self.get_file_document(file_path)
+                document = await self.get_file_document(file_path)
                 if not document:
-                    logger.error(f"【向量数据库】文件 {file_path} 加载内容为空，跳过")
-                    # 如果是临时文件，删除
+                    result["skipped"].append(fname)
                     if files:
-                        try:
-                            os.unlink(file_path)
-                        except Exception as e:
-                            pass
+                        try: os.unlink(file_path)
+                        except Exception: pass
                     continue
 
-                # 4. 切分文档
-                document: list[Document] = await self.spliter.split_documents(document)
+                document = await self.spliter.split_documents(document)
                 if not document:
-                    logger.error(f"【向量数据库】文件 {file_path} 切分内容为空，跳过")
-                    # 如果是临时文件，删除
+                    result["skipped"].append(fname)
                     if files:
-                        try:
-                            os.unlink(file_path)
-                        except:
-                            pass
+                        try: os.unlink(file_path)
+                        except Exception: pass
                     continue
 
-                # 5. 添加用户ID作为元数据
                 if user_id:
                     for chunk_index, doc in enumerate(document):
                         doc.metadata['user_id'] = user_id
@@ -402,29 +391,27 @@ class VectorStoreService:
                             except (TypeError, ValueError):
                                 pass
 
-                # 6. 异步写入向量库
-                await asyncio.to_thread(self.vectors_store.add_documents, document)
+                # Route to correct collection: personal vs shared
+                kb_type = source_metadata.get("kb_type", "shared")
+                store = self._select_store(kb_type)
+                await asyncio.to_thread(store.add_documents, document)
 
-                # 6. 保存MD5
                 await self.save_md5_hex(md5_hex)
-                logger.info(f"【向量数据库】文件 {file_path} 的md5值 {md5_hex} 已保存")
+                result["imported"].append(fname)
+                logger.info(f"【向量数据库】{fname} → {kb_type!r} 集合，已导入")
 
-                # 如果是临时文件，删除
                 if files:
-                    try:
-                        os.unlink(file_path)
-                    except:
-                        pass
+                    try: os.unlink(file_path)
+                    except Exception: pass
 
             except Exception as e:
-                logger.error(f"【向量数据库】文件 {file_path} 处理时出错: {e}")
-                # 如果是临时文件，删除
+                logger.error(f"【向量数据库】{fname} 处理出错: {e}")
                 if files:
-                    try:
-                        os.unlink(file_path)
-                    except:
-                        pass
+                    try: os.unlink(file_path)
+                    except Exception: pass
                 continue
+
+        return result
 
 
 if __name__ == '__main__':
