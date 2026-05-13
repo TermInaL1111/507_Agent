@@ -17,8 +17,17 @@
     </el-page-header>
     
     <div class="chat-content">
-      <div class="messages-container" ref="messagesContainer">
-        <div 
+      <div class="messages-container" ref="messagesContainer" :class="{ 'is-empty': isNewSession }">
+        <!-- Welcome card for new sessions -->
+        <div v-if="isNewSession" class="welcome-card">
+          <h1 class="welcome-title">有什么我能帮你的吗？</h1>
+          <p class="welcome-sub">我是校园 AI 助手，可以帮你查课表、找教室、问流程、写文书</p>
+          <div class="welcome-suggestions">
+            <span v-for="q in campusSuggestions" :key="q" class="welcome-chip" @click="sendFollowup(q)">{{ q }}</span>
+          </div>
+        </div>
+
+        <div
           v-for="(message, index) in messages" 
           :key="index"
           :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']"
@@ -36,7 +45,7 @@
               <span></span>
               <span></span>
             </div>
-            <div v-else v-html="formatMessage(message.content)"></div>
+            <div v-else-if="!isNewSession" v-html="formatMessage(message.content)"></div>
 
             <div v-if="message.role === 'assistant' && message.resultCard" class="result-card" :class="`result-card--${message.resultCard.type}`">
               <div class="result-card-header">
@@ -313,12 +322,6 @@
       </div>
       
       <div class="input-area">
-        <div v-if="faqQuestions.length" class="faq-bar">
-          <span class="faq-bar__label">💬</span>
-          <span v-for="q in faqQuestions" :key="q.id" class="faq-bar__chip" :class="{ 'faq-bar__chip--pinned': q.pinned }" @click="sendFaqQuestion(q.question)">
-            {{ q.pinned ? '📌 ' : '' }}{{ q.question }}
-          </span>
-        </div>
         <div v-if="pendingFiles.length" class="file-chips">
           <el-tag
             v-for="(f, idx) in pendingFiles"
@@ -1430,12 +1433,32 @@ const toggleBookmark = async (message) => {
   }
 };
 
+const followupSeed = ref(0);
+const campusSuggestions = [
+  '奖学金申请条件是什么', '缓考怎么办理', '图书馆在哪里',
+  '如何申请助学贷款', '宿舍管理规定有哪些', '今天的课表是什么',
+  '考试违纪怎么处理', '怎么办理请假手续', '计算机学院有哪些老师',
+];
+
+const isNewSession = computed(() => {
+  return messages.value.length === 1 && messages.value[0].role === 'assistant' && !sessionId.value;
+});
+
 const faqFollowups = computed(() => {
-  // Use loaded FAQ questions as followup suggestions
   if (!faqQuestions.value.length) return [];
-  // Shuffle and pick 4
-  const shuffled = [...faqQuestions.value].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, 4);
+  // Seed-based shuffle for stability within a render, re-shuffle when seed changes
+  const rng = (seed) => { let x = Math.sin(seed) * 10000; return x - Math.floor(x); };
+  const items = [...faqQuestions.value];
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(rng(followupSeed.value + i) * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+  return items.slice(0, 4);
+});
+
+// Re-shuffle followups when a new AI message arrives
+watch(() => messages.value.filter(m => m.role === 'assistant').length, () => {
+  followupSeed.value = Date.now();
 });
 
 const sendFollowup = (question) => {
@@ -2119,6 +2142,28 @@ const loadSessionHistory = (session) => {
 .followup-label { font-size: 12px; color: #909399; }
 .followup-chip { padding: 4px 12px; background: #f0f2f5; border-radius: 16px; font-size: 12px; color: #606266; cursor: pointer; }
 .followup-chip:hover { background: #ecf5ff; color: #409eff; }
+
+.messages-container.is-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.welcome-card {
+  text-align: center; max-width: 560px; padding: 48px 24px;
+}
+.welcome-title {
+  font-size: 28px; font-weight: 500; color: #141413; margin: 0 0 12px;
+  font-family: 'Times New Roman', Georgia, serif; letter-spacing: -0.3px;
+}
+.welcome-sub {
+  font-size: 15px; color: #6c6a64; margin: 0 0 32px; line-height: 1.6;
+}
+.welcome-suggestions {
+  display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+}
+.welcome-chip {
+  padding: 10px 20px; background: #fff; border: 1px solid #e6dfd8; border-radius: 20px;
+  font-size: 14px; color: #3d3d3a; cursor: pointer; transition: all .15s;
+}
+.welcome-chip:hover { border-color: #cc785c; color: #cc785c; background: #faf9f5; }
 
 :deep(hr) {
   border: 0;
