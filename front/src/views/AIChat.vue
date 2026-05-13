@@ -1513,7 +1513,10 @@ const loadSessionHistory = (session) => {
 .messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 24px;
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
   background: #fff;
   border-radius: 8px;
   margin-bottom: 20px;
@@ -1547,23 +1550,23 @@ const loadSessionHistory = (session) => {
 }
 
 .user-message .message-content {
-  background-color: #ecf5ff;
-  color: #303133;
-  border: 1px solid #d9ecff;
+  background-color: #efe9de;
+  color: #141413;
+  border: 1px solid #e6dfd8;
 }
 
 .ai-message .message-content {
-  background-color: #f5f7fa;
-  color: #303133;
-  border: 1px solid #e4e7ed;
+  background-color: #fff;
+  color: #3d3d3a;
+  border: 1px solid #e6dfd8;
 }
 
 .result-card {
   margin-top: 12px;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid #dcdfe6;
-  background-color: #fff;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid #e6dfd8;
+  background-color: #faf9f5;
 }
 
 .result-card--answer {

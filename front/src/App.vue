@@ -150,7 +150,7 @@ html, body, #app {
 .sidebar {
   width: 210px;
   height: 100%;
-  background-color: #304156;
+  background-color: #181715;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -162,13 +162,14 @@ html, body, #app {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border-bottom: 1px solid #1f2d3d;
+  border-bottom: 1px solid #252320;
 }
 
 .logo-text {
-  color: #fff;
-  font-size: 18px;
-  font-weight: 600;
+  color: #faf9f5;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.3px;
 }
 
 .sidebar-menu {
@@ -178,16 +179,16 @@ html, body, #app {
 }
 
 .sidebar-menu .el-menu-item {
-  height: 50px;
-  line-height: 50px;
+  height: 44px;
+  line-height: 44px;
 }
 
 .user-info {
-  height: 60px;
-  padding: 0 20px;
+  height: 56px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
-  border-top: 1px solid #1f2d3d;
+  border-top: 1px solid #252320;
 }
 
 .user-dropdown {
@@ -195,7 +196,7 @@ html, body, #app {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  color: #bfcbd9;
+  color: #a09d96;
 }
 
 .username {
@@ -209,7 +210,7 @@ html, body, #app {
 .main-content {
   flex: 1;
   overflow: auto;
-  background-color: #f0f2f5;
+  background-color: #faf9f5;
 }
 
 .main-content.no-sidebar {
