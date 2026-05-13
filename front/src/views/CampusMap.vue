@@ -86,12 +86,10 @@
     </section>
   </div>
   <AgentFab />
-  <AgentPanel context="校园导航页面" />
 </template>
 
 <script setup>
 import AgentFab from '../components/AgentFab.vue';
-import AgentPanel from '../components/AgentPanel.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Aim, Guide, Refresh, Search } from '@element-plus/icons-vue';

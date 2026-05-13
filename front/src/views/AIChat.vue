@@ -269,7 +269,7 @@
                     <span class="tool-call-meta-label">🧠 思考：</span>
                     <span>{{ tc.thought }}</span>
                   </div>
-                  <div v-if="tc.args && Object.keys(tc.args).length" class="tool-call-args">
+                  <div v-if="tc.args && !tc.thought" class="tool-call-args">
                     <span class="tool-call-meta-label">📥 参数：</span>
                     <code>{{ formatArgs(tc.args) }}</code>
                   </div>
@@ -302,6 +302,11 @@
               >
                 {{ getSourceName(source, sourceIndex) }}
               </button>
+            </div>
+
+            <div v-if="message.role === 'assistant' && message.content && faqFollowups.length && index === messages.length - 1" class="followup-chips">
+              <span class="followup-label">💬 你可能还想问：</span>
+              <span v-for="(q, qi) in faqFollowups.slice(0, 4)" :key="qi" class="followup-chip" @click="sendFollowup(q.question)">{{ q.question }}</span>
             </div>
           </div>
         </div>
@@ -409,7 +414,7 @@ const getCsrfToken = () => {
 
 // 聊天消息
 const messages = ref([
-  { role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', sources: [], resultCard: null }
+  { role: 'assistant', content: '你好！我是校园AI助手 👋\n\n可以问我关于课表、导航、办事流程、教师信息等问题。', sources: [], resultCard: null }
 ]);
 const userInput = ref('');
 const messagesContainer = ref(null);
@@ -1428,6 +1433,19 @@ const toggleBookmark = async (message) => {
   }
 };
 
+const faqFollowups = computed(() => {
+  // Use loaded FAQ questions as followup suggestions
+  if (!faqQuestions.value.length) return [];
+  // Shuffle and pick 4
+  const shuffled = [...faqQuestions.value].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, 4);
+});
+
+const sendFollowup = (question) => {
+  userInput.value = question;
+  sendMessage();
+};
+
 const sendFaqQuestion = (question) => {
   userInput.value = question;
   sendMessage();
@@ -2097,6 +2115,10 @@ const loadSessionHistory = (session) => {
 .faq-bar__chip { padding: 4px 12px; background: #f0f2f5; border-radius: 16px; font-size: 12px; color: #606266; cursor: pointer; white-space: nowrap; }
 .faq-bar__chip:hover { background: #ecf5ff; color: #409eff; }
 .faq-bar__chip--pinned { background: #fef0f0; color: #e6a23c; }
+.followup-chips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.followup-label { font-size: 12px; color: #909399; }
+.followup-chip { padding: 4px 12px; background: #f0f2f5; border-radius: 16px; font-size: 12px; color: #606266; cursor: pointer; }
+.followup-chip:hover { background: #ecf5ff; color: #409eff; }
 
 :deep(hr) {
   border: 0;
