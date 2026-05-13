@@ -1537,7 +1537,7 @@ const loadSessionHistory = (session) => {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
-  max-width: 960px;
+  max-width: 1060px;
   margin: 0 auto;
   width: 100%;
   background: #fff;
