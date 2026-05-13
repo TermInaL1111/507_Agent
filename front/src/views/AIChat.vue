@@ -269,7 +269,7 @@
                     <span class="tool-call-meta-label">🧠 思考：</span>
                     <span>{{ tc.thought }}</span>
                   </div>
-                  <div v-if="tc.args && !tc.thought" class="tool-call-args">
+                  <div v-if="tc.args" class="tool-call-args">
                     <span class="tool-call-meta-label">📥 参数：</span>
                     <code>{{ formatArgs(tc.args) }}</code>
                   </div>
@@ -1166,25 +1166,22 @@ const fetchAIResponse = async (userMessage) => {
             case 'step':
               break;
             case 'thought': {
-              const curMsg = messages.value[messages.value.length - 1];
-              if (curMsg && curMsg.role === 'assistant') {
-                if (!curMsg.toolCalls) curMsg.toolCalls = [];
-                // Attach thought to the upcoming running tool call
-                curMsg.toolCalls.push({ tool: json.tool, args: {}, result: null, status: 'running', thought: json.content });
-              }
+              // Store thought for next tool_call to pick up
+              if (!window.__agent_thought) window.__agent_thought = {};
+              window.__agent_thought[json.tool] = json.content;
               break;
             }
             case 'tool_call': {
               const curMsg = messages.value[messages.value.length - 1];
               if (curMsg && curMsg.role === 'assistant') {
                 if (!curMsg.toolCalls) curMsg.toolCalls = [];
-                // Merge with pending thought entry if exists
-                const pending = curMsg.toolCalls.find(tc => tc.status === 'running' && !tc.result && tc.thought);
-                if (pending && pending.tool === json.tool) {
-                  pending.args = json.args;
-                } else {
-                  curMsg.toolCalls.push({ tool: json.tool, args: json.args, result: null, status: 'running' });
+                const entry = { tool: json.tool, args: json.args || {}, result: null, status: 'running' };
+                // Attach pending thought
+                if (window.__agent_thought && window.__agent_thought[json.tool]) {
+                  entry.thought = window.__agent_thought[json.tool];
+                  delete window.__agent_thought[json.tool];
                 }
+                curMsg.toolCalls.push(entry);
               }
               break;
             }

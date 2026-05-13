@@ -412,7 +412,6 @@ async def get_agent_stream_response(
         stored_str = json.dumps(stored_response, ensure_ascii=False)
 
         sources = []
-        # Use the RAG tool's actual query for source retrieval, not the original user message
         rag_query = query
         for step in steps:
             if step.get("tool") in ("rag_summary_tools", "get_training_program", "recommend_courses"):
@@ -426,10 +425,23 @@ async def get_agent_stream_response(
             rag_service = RagService()
             related_docs = await rag_service.retrieve_document(rag_query)
             sources = await rag_service.build_sources(related_docs, query=rag_query)
-            if sources:
-                yield f"data: {json.dumps({'type': 'sources', 'sources': sources, 'session_id': session_id}, ensure_ascii=False)}\n\n"
         except Exception as source_error:
             logger.warning(f"【Agent流式响应】来源文件生成失败: {source_error}")
+            sources = []
+
+        # Fallback: extract file names from rag_summary_tools output
+        if not sources:
+            for step in steps:
+                if step.get("tool") == "rag_summary_tools":
+                    output = str(step.get("tool_output", ""))
+                    # Try to extract doc names from tool output
+                    import re as _re
+                    names = _re.findall(r'[\w一-鿿]+\.(?:pdf|docx|txt|md)', output)
+                    sources = [{"doc_name": n, "file_name": n} for n in names[:5]]
+                    break
+
+        if sources:
+            yield f"data: {json.dumps({'type': 'sources', 'sources': sources, 'session_id': session_id}, ensure_ascii=False)}\n\n"
 
         # Store with metadata wrapper so frontend can reconstruct cards on replay
         await sm.session_manager.add_message(session_id, user_id, query, stored_str)
