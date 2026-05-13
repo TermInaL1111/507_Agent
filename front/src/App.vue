@@ -35,6 +35,11 @@
           <span>会话记录</span>
         </el-menu-item>
 
+        <el-menu-item index="/bookmarks">
+          <el-icon><Star /></el-icon>
+          <span>我的收藏</span>
+        </el-menu-item>
+
         <el-menu-item index="/profile">
           <el-icon><User /></el-icon>
           <span>个人中心</span>

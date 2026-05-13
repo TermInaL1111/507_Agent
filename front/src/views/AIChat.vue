@@ -281,6 +281,13 @@
               </div>
             </div>
 
+            <div v-if="message.role === 'assistant' && message.content" class="message-actions">
+              <el-button link size="small" @click="toggleBookmark(message)" :type="message._bookmarked ? 'warning' : 'default'">
+                <el-icon><component :is="message._bookmarked ? StarFilled : Star" /></el-icon>
+                {{ message._bookmarked ? '已收藏' : '收藏' }}
+              </el-button>
+            </div>
+
             <div v-if="message.role === 'assistant' && message.credibility" class="message-credibility" :class="'credibility--' + message.credibility.level">
               {{ message.credibility.icon }} {{ message.credibility.label }}
             </div>
@@ -381,7 +388,7 @@
 import { computed, ref, onMounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { ArrowDown, ArrowUp, Link, Loading, Promotion } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowUp, Link, Loading, Promotion, Star, StarFilled } from '@element-plus/icons-vue';
 import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
@@ -1391,6 +1398,34 @@ const handleDocDownload = (url) => {
     .catch(() => {
       window.open(fullUrl, '_blank', 'noopener,noreferrer');
     });
+};
+
+const toggleBookmark = async (message) => {
+  if (!message.content) return;
+  const token = userStore.getToken;
+  if (message._bookmarked) {
+    try {
+      await fetch(`/api/bookmarks/${message._bid}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+      });
+      message._bookmarked = false;
+      ElMessage.success('已取消收藏');
+    } catch {}
+  } else {
+    try {
+      const resp = await fetch('/api/bookmarks/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: message.content, sources: message.sources || [] }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        message._bookmarked = true;
+        message._bid = data.bookmark.id;
+        ElMessage.success('已收藏');
+      }
+    } catch {}
+  }
 };
 
 const sendFaqQuestion = (question) => {

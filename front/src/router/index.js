@@ -126,10 +126,13 @@ const routes = [
     path: '/sessions',
     name: 'Sessions',
     component: () => import('../views/Sessions.vue'),
-    meta: {
-      title: '会话管理',
-      keepAlive: true
-    }
+    meta: { title: '会话管理', keepAlive: true }
+  },
+  {
+    path: '/bookmarks',
+    name: 'Bookmarks',
+    component: () => import('../views/Bookmarks.vue'),
+    meta: { title: '我的收藏', keepAlive: true }
   },
 ]
 

@@ -348,7 +348,7 @@ async def extract_time_nodes(conversation_text: str) -> str:
         lines = ["识别到以下时间节点，请确认是否加入课表："]
         for it in items:
             lines.append(f"- {it.get('date','?')} {it.get('time','?')} 【{it.get('title','')}】{it.get('type','')}")
-        return "\n".join(lines) + f"\n回复"确认加入"或"忽略"\n<!--CARD:{card}-->"
+        return "\n".join(lines) + '\n回复"确认加入"或"忽略"\n<!--CARD:' + card + '-->'
 
     except Exception as e:
         logger.warning(f"Time node extraction failed: {e}")
