@@ -9,28 +9,33 @@
 | 服务 | 目录 | 容器端口 | 说明 |
 | --- | --- | --- | --- |
 | 前端服务 | `front` | `80` | Vue 3 + Element Plus，Nginx 反代 |
-| AI 后端服务 | `backend` | `8000` | FastAPI + LangChain Agent (12 工具) + ChromaDB RAG |
+| AI 后端服务 | `backend` | `8000` | FastAPI + LangChain Agent (18 工具, DeepSeek V3) + ChromaDB RAG |
 | 用户服务 | `DjangoUserService` | `8001` | Django 5.2 + DRF + SimpleJWT |
 | MySQL | — | `3306` | 用户、会话、日程、文件索引 |
 | Redis | — | `6379` | 缓存、限流、用户信息缓存 |
 
-### Agent 工具清单（13 个）
+### Agent 工具清单（18 个）
 
-| 工具 | 功能 |
-|------|------|
-| `rag_summary_tools` | RAG 知识库检索摘要 |
-| `get_weather_tools` | 天气查询 |
-| `what_time_is_now` | 当前时间 |
-| `get_user_info_tools` | 用户信息 |
-| `reorder_documents_tools` | 文档重排序 |
-| `get_schedule_week` | 整周课表查询 |
-| `get_schedule_today` | 今日课表查询 |
-| `create_schedule_event` | 创建日程事件 |
-| `search_campus_locations_tool` | 校园地点搜索 |
-| `get_campus_route` | 校园路线规划 |
-| `get_training_program` | 培养方案检索 |
-| `recommend_courses` | 选课建议 |
-| `generate_leave_request` | 请假条 Word 生成 |
+| 工具 | 功能 | 输出 |
+|------|------|------|
+| `rag_summary_tools` | RAG 知识库检索 | 文本+来源 |
+| `get_schedule_week` | 整周课表 | schedule_card |
+| `get_schedule_today` | 今日课表 | schedule_card |
+| `create_schedule_event` | 创建日程+冲突检测 | check_card |
+| `search_campus_locations_tool` | 校园地点搜索 | 文本 |
+| `get_campus_route` | 校园路线规划 | navigation_card |
+| `get_training_program` | 培养方案检索 | 文本+来源 |
+| `recommend_courses` | 选课建议 | recommendation_card |
+| `doc_preview` | 通用文书生成 | document_card |
+| `faq_recommend` | FAQ 推荐 | faq_card |
+| `get_campus_service_link` | 业务办理入口链接 | recommendation_card |
+| `extract_time_nodes` | 对话时间节点提取 | schedule_card |
+| `remember_user_context` | 存储用户偏好至 Redis | 文本 |
+| `recall_user_context` | 读取用户偏好 | 文本 |
+| `get_weather_tools` | 天气查询 | 文本 |
+| `what_time_is_now` | 当前时间 | 文本 |
+| `get_user_info_tools` | 用户信息 | 文本 |
+| `reorder_documents_tools` | 文档重排序 | 文本 |
 
 ## 二、Docker 部署（完整步骤）
 
@@ -445,13 +450,23 @@ uv run python manage.py runserver 127.0.0.1:8001
 | UC-09 | 文书辅助（请假条 docx 生成） | Agent 对话 / 文书辅助页 |
 | UC-10 | 管理员运维（Redis 限流 + 日志） | 后台自动 |
 
-**SSE 事件类型**：`response` | `tool_call` | `tool_result` | `sources` | `done` | `error`
+**SSE 事件类型**：`thought` | `response` | `tool_call` | `tool_result` | `sources` | `done` | `error`
 
 **前端特性**：
-- 工具调用可视化（tool_call/tool_result 芯片动画）
-- 文件上传联动（PDF 课表 → 自动解析 → 创建日程 → 对话展示）
-- Markdown 渲染（marked + highlight.js + DOMPurify）
-- Schedule 卡片渲染（时间线列表 + 周网格视图 + 冲突红标）
+- ReAct 可视化: Thought → Action → Observation 可展开卡片
+- AgentPanel: 课表/导航页嵌入侧边 Agent 聊天
+- Agent FAB: 全局悬浮按钮一键呼出 Agent
+- 8 种 result_card: answer/recommendation/navigation/schedule/check/document_preview/document_result/process_guide/faq
+- PDF 课表上传 → 自动解析去重 → 创建日程
+- 可信度提示 (📌/⚠️/💡)
+- 收藏功能 (Redis)
+- Markdown 渲染 (marked + highlight.js + DOMPurify)
+
+**知识库内容**:
+- 学生手册 (2023版, 315 chunks)
+- 计算机学院教师信息 (60人, 含个人主页)
+- 4个学院培养方案 (15 PDF)
+- 校园业务入口链接 (8个)
 
 ## 八、常见故障排查
 
