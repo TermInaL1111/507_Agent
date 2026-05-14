@@ -1036,15 +1036,23 @@ const sendMessage = async () => {
     const fileCount = pendingFiles.value.length;
     let successCount = 0;
     let totalEvents = 0;
+    let totalDuplicates = 0;
     for (let i = 0; i < pendingFiles.value.length; i++) {
       uploadingFile.value = i;
       try {
         const file = pendingFiles.value[i];
         const result = await uploadSingleFile(file);
         successCount++;
-        if (result.events_count > 0) {
-          totalEvents += result.events_count;
-          fileContext += `\n📎 已从「${file.name}」导入 ${result.events_count} 条课表。`;
+        const importedCount = result.events_count || 0;
+        const duplicateCount = result.duplicates_skipped || 0;
+        const parsedCount = result.parsed_count || importedCount + duplicateCount;
+        totalEvents += importedCount;
+        totalDuplicates += duplicateCount;
+        if (importedCount > 0) {
+          const duplicateText = duplicateCount > 0 ? `，另有 ${duplicateCount} 条已存在并跳过` : '';
+          fileContext += `\n📎 已从「${file.name}」导入 ${importedCount} 条课表${duplicateText}。`;
+        } else if (duplicateCount > 0) {
+          fileContext += `\n📎 已识别「${file.name}」中的 ${parsedCount} 条课表，但这些安排已存在，未重复添加。`;
         } else {
           fileContext += `\n📎 已上传「${file.name}」${result.warning ? '（' + result.warning + '）' : ''}。`;
         }
@@ -1056,6 +1064,7 @@ const sendMessage = async () => {
     if (successCount > 0) {
       const parts = [`${successCount}/${fileCount} 个文件上传成功`];
       if (totalEvents > 0) parts.push(`${totalEvents} 条课表已导入`);
+      if (totalDuplicates > 0) parts.push(`${totalDuplicates} 条重复课表已跳过`);
       ElMessage.success(parts.join('，'));
     }
     pendingFiles.value = [];

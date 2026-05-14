@@ -260,6 +260,7 @@ async def upload_schedule_pdf(
         "text_preview": text_preview,
         "events": created_events,
         "events_count": len(created_events),
+        "parsed_count": len(parsed_items),
         "duplicates_skipped": skipped,
         "warning": warning or None,
     })
