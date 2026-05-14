@@ -1,3 +1,4 @@
+import json
 import re
 from typing import List
 import uuid
@@ -11,12 +12,16 @@ from app.agent.agent_tools import set_agent_user_context
 from app.utils.django_user_client import set_agent_jwt_token
 from app.utils.auth_utils import security
 from app.core.logger_handler import logger
+from sqlalchemy import select
+
 from app.db.db_config import AsyncSessionLocal
+from app.models.chat_history import SourceFile
 from app.router.chat_service import ChatService, get_router_service
 
 from app.schemas.models import QueryRequest, RAGResponse, RAGRequest, SessionResponse, ReorderResponse, ReorderRequest, ScheduleEventCreate
 from app.services.schedule_service import create_event as svc_create_event
 from app.services.source_file_service import create_source_file_record
+from app.services import session_manager as sm
 from app.utils.auth_utils import get_current_user_id
 from app.utils.file_handler import pdf_loader
 from app.core.success_response import success_response
@@ -303,6 +308,104 @@ async def upload_schedule_pdf(
     })
 
 
+def _weekday_label(weekday: str) -> str:
+    return {
+        "Monday": "周一",
+        "Tuesday": "周二",
+        "Wednesday": "周三",
+        "Thursday": "周四",
+        "Friday": "周五",
+        "Saturday": "周六",
+        "Sunday": "周日",
+    }.get(weekday, weekday or "未知星期")
+
+
+def _looks_like_uploaded_schedule_query(query: str) -> bool:
+    return "已上传" in query and "课表" in query and ".pdf" in query
+
+
+def _format_conflict_message(filename: str, parsed_count: int, conflicts: list[dict]) -> str:
+    lines = []
+    for conflict in conflicts[:8]:
+        uploaded = conflict.get("uploaded", {})
+        existing = conflict.get("existing", {})
+        day = _weekday_label(uploaded.get("weekday", ""))
+        uploaded_time = f"{uploaded.get('startTime', '--:--')}-{uploaded.get('endTime', '--:--')}"
+        existing_time = f"{existing.get('startTime', '--:--')}-{existing.get('endTime', '--:--')}"
+        existing_location = f" @ {existing.get('location')}" if existing.get("location") else ""
+        lines.append(
+            f"- {day} {uploaded_time}「{uploaded.get('title', '未命名课程')}」"
+            f"与已有「{existing.get('title', '未命名课程')}」{existing_time}{existing_location} 时间冲突"
+        )
+
+    more = ""
+    if len(conflicts) > len(lines):
+        more = f"\n- 另外还有 {len(conflicts) - len(lines)} 条冲突未展开。"
+
+    return (
+        f"我检查了你刚上传的「{filename}」，识别出 {parsed_count} 条课表记录。\n\n"
+        f"⚠️ 这些记录与当前时间表存在时间冲突，所以没有重复添加。\n\n"
+        f"时间冲突明细：\n" + "\n".join(lines) + more +
+        "\n\n如果你想用这份 PDF 覆盖当前课表，请先清空或删除已有冲突课程，再重新导入。"
+    )
+
+
+async def _build_recent_schedule_upload_conflict_message(query: str, user_id: str) -> str | None:
+    if not _looks_like_uploaded_schedule_query(query):
+        return None
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(SourceFile)
+            .where(
+                SourceFile.user_id == user_id,
+                SourceFile.kb_type == "personal",
+                SourceFile.category == "schedule",
+            )
+            .order_by(SourceFile.created_at.desc())
+            .limit(1)
+        )
+        source_file = result.scalar_one_or_none()
+        if not source_file:
+            return None
+
+    try:
+        docs = await pdf_loader(source_file.file_path)
+        full_text = "\n".join(doc.page_content for doc in docs)
+        parsed_items, warning = _parse_schedule_pdf_text(full_text)
+    except Exception as e:
+        logger.warning(f"【课表上传】最近上传课表冲突兜底解析失败: {e}")
+        return None
+
+    if not parsed_items or warning:
+        return None
+
+    conflicts = []
+    async with AsyncSessionLocal() as db:
+        from app.services.schedule_service import list_week_events as svc_list_events
+
+        existing = await svc_list_events(db, user_id)
+        for item in parsed_items:
+            overlapping = [
+                e for e in existing
+                if e.weekday == item["weekday"]
+                and _events_overlap(item["startTime"], item["endTime"], e.startTime, e.endTime)
+            ]
+            conflicts.extend(_format_schedule_conflict(item, e) for e in overlapping)
+
+    if not conflicts:
+        return None
+
+    return _format_conflict_message(source_file.original_filename, len(parsed_items), conflicts)
+
+
+async def _single_response_stream(query: str, session_id: str, user_id: str, content: str):
+    yield f"data: {json.dumps({'type': 'response', 'content': content, 'session_id': session_id}, ensure_ascii=False)}\n\n"
+    stored_response = json.dumps({"content": content, "card": None, "tool_calls": []}, ensure_ascii=False)
+    await sm.session_manager.add_message(session_id, user_id, query, stored_response)
+    yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': [], 'credibility': {'level': 'high', 'label': '基于课表冲突检测', 'icon': '⚠️', 'detail': '由系统解析上传 PDF 并比对当前时间表'}}, ensure_ascii=False)}\n\n"
+
+
 @chat_router.post("/agent/query/stream")
 async def query_stream(
         request: QueryRequest,
@@ -316,6 +419,17 @@ async def query_stream(
 
     # Store JWT token for agent tools (e.g., doc_preview auto-fill)
     set_agent_jwt_token(credentials.credentials)
+
+    conflict_message = await _build_recent_schedule_upload_conflict_message(request.query, user_id)
+    if conflict_message:
+        return StreamingResponse(
+            _single_response_stream(request.query, session_id, user_id, conflict_message),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive"
+            }
+        )
 
     # 直接调用get_agent_stream_response函数
     return StreamingResponse(
