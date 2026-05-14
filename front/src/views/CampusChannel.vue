@@ -62,6 +62,10 @@
           </header>
           <h3>{{ post.title || '未命名帖子' }}</h3>
           <p>{{ post.summary || post.content }}</p>
+          <div v-if="post.images?.length" class="post-images">
+            <img v-for="img in post.images.slice(0, 3)" :key="img" :src="img" alt="校园频道图片" />
+            <span v-if="post.images.length > 3">+{{ post.images.length - 3 }}</span>
+          </div>
           <footer>
             <span>赞 {{ post.like_count || 0 }}</span>
             <span>评论 {{ post.comment_count || 0 }}</span>
@@ -101,6 +105,13 @@
         <div v-if="selectedPost.images?.length" class="image-list">
           <img v-for="img in selectedPost.images" :key="img" :src="img" alt="校园频道图片" />
         </div>
+        <section v-if="selectedPost.raw_data?.comments?.length" class="comments-block">
+          <h4>公开评论预览</h4>
+          <div v-for="comment in selectedPost.raw_data.comments" :key="`${comment.time}-${comment.content}`" class="comment-item">
+            <span>{{ comment.time }}</span>
+            <p>{{ comment.content }}</p>
+          </div>
+        </section>
       </div>
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
@@ -197,7 +208,7 @@ const scrapeChannel = async () => {
         channel_url: CHANNEL_URL,
         max_posts: 100,
         since_days: 7,
-        include_images: false,
+        include_images: true,
         dry_run: false
       })
     });
@@ -270,8 +281,16 @@ onMounted(reload);
 .source-note { margin-top: 14px; color: #8a8479; line-height: 1.6; font-size: 12px; }
 .detail-meta { color: #8a8479; margin-bottom: 12px; }
 .detail p { white-space: pre-wrap; line-height: 1.7; }
+.post-images { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+.post-images img { width: 72px; height: 72px; border-radius: 6px; object-fit: cover; border: 1px solid #ece7de; }
+.post-images span { color: #8a8479; font-size: 13px; }
 .image-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
-.image-list img { width: 100%; border-radius: 6px; object-fit: cover; }
+.image-list img { width: 100%; aspect-ratio: 1 / 1; border-radius: 6px; object-fit: cover; }
+.comments-block { margin-top: 18px; border-top: 1px solid #ece7de; padding-top: 12px; }
+.comments-block h4 { margin: 0 0 8px; color: #3b3833; }
+.comment-item { padding: 8px 0; border-bottom: 1px solid #f2eee7; }
+.comment-item span { color: #8a8479; font-size: 12px; }
+.comment-item p { margin: 4px 0 0; }
 @media (max-width: 1100px) {
   .channel-layout { grid-template-columns: 1fr; }
   .section-nav { display: flex; overflow-x: auto; }

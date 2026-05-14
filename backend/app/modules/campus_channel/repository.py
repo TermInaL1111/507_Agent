@@ -17,6 +17,7 @@ class CampusChannelRepository:
         for post in posts:
             exists = await self.find_duplicate(post.post_url, post.content_hash)
             if exists:
+                self._merge_existing(exists, post)
                 skipped += 1
                 continue
             payload = post.model_dump()
@@ -30,6 +31,31 @@ class CampusChannelRepository:
         for item in inserted:
             await self.db.refresh(item)
         return inserted, skipped
+
+    @staticmethod
+    def _merge_existing(record: CampusChannelPost, post: CampusChannelPostCreate) -> None:
+        payload = post.model_dump()
+        for field in ("channel_name", "section_name", "post_url", "post_id", "author_name", "title", "publish_time_text", "publish_time"):
+            value = payload.get(field)
+            if value and (not getattr(record, field, None) or field in {"channel_name", "section_name", "publish_time_text", "publish_time"}):
+                setattr(record, field, value)
+        if payload.get("content") and len(payload["content"]) > len(record.content or ""):
+            record.content = payload["content"]
+        if payload.get("summary") and len(payload["summary"]) > len(record.summary or ""):
+            record.summary = payload["summary"]
+        merged_images = list(dict.fromkeys((record.images or []) + (payload.get("images") or [])))
+        record.images = merged_images
+        for field in ("like_count", "comment_count", "share_count", "view_count"):
+            value = payload.get(field)
+            if value is not None and int(value or 0) >= int(getattr(record, field, 0) or 0):
+                setattr(record, field, value)
+        raw = dict(record.raw_data or {})
+        new_raw = payload.get("raw_data") or {}
+        raw.update(new_raw)
+        if new_raw.get("comments"):
+            raw["comments"] = new_raw["comments"]
+        record.raw_data = raw
+        record.scraped_at = datetime.now()
 
     async def find_duplicate(self, post_url: str, content_hash: str) -> CampusChannelPost | None:
         conditions = []

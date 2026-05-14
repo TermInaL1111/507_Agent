@@ -9,6 +9,7 @@ from typing import Any
 
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 
 from app.core.logger_handler import logger
 from app.modules.campus_channel.schemas import CampusChannelPostCreate
@@ -68,10 +69,13 @@ class QQChannelScraper:
             posts = self._extract_posts_from_html(html_text, channel_url, channel_name, include_images)
             logger.info(f"【校园频道】{source_name} 解析候选帖子 {len(posts)} 条")
             for post in posts:
-                if post.content_hash in seen:
+                dedupe_key = post.post_id or post.post_url or post.content_hash
+                if dedupe_key in seen:
                     continue
-                seen.add(post.content_hash)
+                seen.add(dedupe_key)
                 all_posts.append(post)
+
+        all_posts = self._enrich_posts_from_public_detail(all_posts, include_images=include_images)
 
         if not all_posts:
             logger.warning("【校园频道】公开页面中未发现可解析帖子，可能页面需要登录、限制访问或结构变化")
@@ -176,6 +180,31 @@ class QQChannelScraper:
             finally:
                 browser.close()
 
+    def _fetch_detail_with_playwright(self, post_url: str) -> str:
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception as exc:
+            raise RuntimeError("后端环境未安装 playwright，无法使用浏览器渲染详情页") from exc
+        headless = os.getenv("CAMPUS_CHANNEL_HEADLESS", "true").lower() != "false"
+        wait_ms = self._safe_int(os.getenv("CAMPUS_CHANNEL_PLAYWRIGHT_WAIT_MS", "900")) or 900
+        launch_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=headless, args=launch_args)
+            page = browser.new_page(user_agent=self.user_agent, viewport={"width": 1365, "height": 1800})
+            try:
+                response = page.goto(post_url, wait_until="domcontentloaded", timeout=25000)
+                if response and response.status in (401, 403):
+                    raise RuntimeError("帖子详情页拒绝访问或需要登录")
+                page.wait_for_timeout(wait_ms * 2)
+                try:
+                    page.get_by_text("展开", exact=True).first.click(timeout=1200)
+                    page.wait_for_timeout(wait_ms)
+                except Exception:
+                    pass
+                return page.locator("body").inner_text(timeout=8000) + "\n" + page.content()
+            finally:
+                browser.close()
+
     def _extract_channel_name(self, html_text: str) -> str:
         title_match = re.search(r"<title[^>]*>(.*?)</title>", html_text, re.I | re.S)
         if title_match:
@@ -212,14 +241,17 @@ class QQChannelScraper:
                 continue
             section_name = self._infer_section(item, content)
             author = self._clean_text(item.get("author_name") or item.get("author") or item.get("nick") or "")
-            publish_time_text = self._clean_text(item.get("publish_time_text") or item.get("time") or "")
-            publish_time = self._parse_publish_time(publish_time_text)
+            raw_time = item.get("publish_time") or item.get("time") or ""
+            publish_time_text = self._clean_text(item.get("publish_time_text") or self._format_publish_time_text(str(raw_time)) or raw_time)
+            publish_time = raw_time if isinstance(raw_time, datetime) else self._parse_publish_time(str(raw_time) or publish_time_text)
             post_url = self._clean_text(item.get("post_url") or item.get("url") or "")
             post_id = self._clean_text(str(item.get("post_id") or item.get("id") or ""))
             images = item.get("images") if include_images else []
+            if include_images:
+                images = list(dict.fromkeys((images or []) + (item.get("gifs") or []) + (item.get("videos") or [])))
             if not isinstance(images, list):
                 images = []
-            raw = item if isinstance(item, dict) else {}
+            raw = self._json_safe(item if isinstance(item, dict) else {})
             content_hash = self.make_content_hash(channel_url, title, content, author, publish_time_text)
             if content_hash in seen:
                 continue
@@ -248,9 +280,19 @@ class QQChannelScraper:
 
     def _extract_from_json_blobs(self, html_text: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
+
+        for match in re.finditer(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html_text, re.I | re.S):
+            script = html.unescape(match.group(1) or "").strip()
+            try:
+                data = json.loads(script)
+            except Exception as exc:
+                logger.debug(f"【校园频道】JSON-LD 解析失败: {exc}")
+                continue
+            items.extend(self._extract_schema_posts(data))
+
         for match in re.finditer(r"<script[^>]*>(.*?)</script>", html_text, re.I | re.S):
             script = html.unescape(match.group(1) or "")
-            if not any(token in script for token in ("content", "post", "feed", "author", "topic")):
+            if not any(token in script for token in ("SocialMediaPosting", "content", "post", "feed", "author", "topic")):
                 continue
             for obj_text in re.findall(r"\{[^{}]{20,3000}\}", script):
                 try:
@@ -261,6 +303,110 @@ class QQChannelScraper:
                 if flattened:
                     items.append(flattened)
         return items
+
+    def _extract_schema_posts(self, data: Any) -> list[dict[str, Any]]:
+        posts: list[dict[str, Any]] = []
+
+        def walk(node: Any):
+            if isinstance(node, dict):
+                if node.get("@type") == "SocialMediaPosting":
+                    normalized = self._normalize_schema_post(node)
+                    if normalized:
+                        posts.append(normalized)
+                for key in ("@graph", "itemListElement", "item", "mainEntity", "hasPart"):
+                    if key in node:
+                        walk(node[key])
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(data)
+        return posts
+
+    def _normalize_schema_post(self, post_data: dict[str, Any]) -> dict[str, Any] | None:
+        title = self._clean_text(post_data.get("headline") or post_data.get("name") or "")
+        content = self._clean_text(post_data.get("articleBody") or post_data.get("text") or post_data.get("description") or "")
+        if not content:
+            content = title
+        if not title:
+            title = self._derive_title(content)
+        if len(f"{title}{content}".strip()) < 8:
+            return None
+
+        author_info = post_data.get("author") or {}
+        author_name = author_info.get("name", "") if isinstance(author_info, dict) else str(author_info or "")
+        interaction = post_data.get("interactionStatistic") or []
+        like_count = comment_count = share_count = 0
+        if isinstance(interaction, dict):
+            interaction = [interaction]
+        if isinstance(interaction, list):
+            for stat in interaction:
+                if not isinstance(stat, dict):
+                    continue
+                interaction_type = str(stat.get("interactionType") or "").lower()
+                count = self._safe_int(stat.get("userInteractionCount") or stat.get("interactionCount"))
+                if "comment" in interaction_type:
+                    comment_count = count
+                elif "share" in interaction_type:
+                    share_count = count
+                elif "like" in interaction_type or not interaction_type:
+                    like_count = count
+
+        images = self._normalize_media_list(post_data.get("image"))
+        videos = self._normalize_video_list(post_data.get("video"))
+        gifs = self._normalize_media_list(post_data.get("gif"))
+        post_url = self._clean_text(post_data.get("url") or "")
+        post_id = self._extract_post_id(post_url)
+        date_published = self._clean_text(post_data.get("datePublished") or "")
+        section_name = self._infer_section({"url": post_url}, f"{title} {content}")
+
+        return {
+            "id": post_id,
+            "title": title,
+            "content": content,
+            "author": self._clean_text(author_name),
+            "time": date_published,
+            "publish_time": self._parse_publish_time(date_published),
+            "publish_time_text": self._format_publish_time_text(date_published),
+            "section": section_name,
+            "like_count": like_count,
+            "comment_count": comment_count,
+            "share_count": share_count,
+            "url": post_url,
+            "images": images,
+            "videos": videos,
+            "gifs": gifs,
+            "raw": post_data,
+        }
+
+    @staticmethod
+    def _normalize_media_list(value: Any) -> list[str]:
+        if not value:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, dict):
+            for key in ("url", "contentUrl", "thumbnailUrl"):
+                if value.get(key):
+                    return [str(value[key])]
+            return []
+        if isinstance(value, list):
+            items: list[str] = []
+            for item in value:
+                items.extend(QQChannelScraper._normalize_media_list(item))
+            return list(dict.fromkeys(items))
+        return []
+
+    @staticmethod
+    def _normalize_video_list(value: Any) -> list[str]:
+        return QQChannelScraper._normalize_media_list(value)
+
+    @staticmethod
+    def _extract_post_id(post_url: str) -> str:
+        if not post_url:
+            return ""
+        path = urlparse(post_url).path.rstrip("/")
+        return path.rsplit("/", 1)[-1] if "/" in path else path
 
     def _normalize_json_object(self, obj: dict[str, Any]) -> dict[str, Any] | None:
         text_fields = ["content", "text", "summary", "desc", "description"]
@@ -319,6 +465,90 @@ class QQChannelScraper:
             parsed.setdefault("time", self._extract_time_text(chunk))
             items.append(parsed)
         return items
+
+    def _enrich_posts_from_public_detail(self, posts: list[CampusChannelPostCreate], include_images: bool) -> list[CampusChannelPostCreate]:
+        if str(os.getenv("CAMPUS_CHANNEL_FETCH_DETAILS", "true")).lower() not in {"true", "1", "yes"}:
+            return posts
+        max_details = self._safe_int(os.getenv("CAMPUS_CHANNEL_DETAIL_LIMIT", "20")) or 20
+        max_comment_details = self._safe_int(os.getenv("CAMPUS_CHANNEL_COMMENT_DETAIL_LIMIT", "5")) or 5
+        comment_detail_count = 0
+        enriched: list[CampusChannelPostCreate] = []
+        for index, post in enumerate(posts):
+            if index >= max_details or not post.post_url:
+                enriched.append(post)
+                continue
+            try:
+                detail_html = self._fetch_public_html(post.post_url)
+                detail = self._extract_detail_fields(detail_html, include_images=include_images)
+                if detail.get("comment_count", 0) and not detail.get("comments") and comment_detail_count < max_comment_details:
+                    try:
+                        rendered_detail_html = self._fetch_detail_with_playwright(post.post_url)
+                        rendered_detail = self._extract_detail_fields(rendered_detail_html, include_images=include_images)
+                        detail.update({k: v for k, v in rendered_detail.items() if v})
+                        comment_detail_count += 1
+                    except Exception as exc:
+                        logger.debug(f"【校园频道】渲染详情评论失败 post={post.post_id}: {exc}")
+                if detail:
+                    updated = post.model_copy(deep=True)
+                    if detail.get("content") and len(detail["content"]) > len(updated.content or ""):
+                        updated.content = detail["content"]
+                        updated.summary = self._summarize(updated.content)
+                    if detail.get("title") and len(detail["title"]) > len(updated.title or ""):
+                        updated.title = detail["title"][:512]
+                    if detail.get("view_count") is not None:
+                        updated.view_count = detail["view_count"]
+                    if detail.get("comment_count") is not None:
+                        updated.comment_count = detail["comment_count"]
+                    if detail.get("like_count") is not None and not updated.like_count:
+                        updated.like_count = detail["like_count"]
+                    if include_images and detail.get("images"):
+                        updated.images = list(dict.fromkeys((updated.images or []) + detail["images"]))
+                    raw = dict(updated.raw_data or {})
+                    raw.update({k: v for k, v in detail.items() if k in {"comments", "detail_text"}})
+                    updated.raw_data = raw
+                    enriched.append(updated)
+                else:
+                    enriched.append(post)
+            except Exception as exc:
+                logger.debug(f"【校园频道】详情补全失败 post={post.post_id}: {exc}")
+                enriched.append(post)
+        return enriched
+
+    def _extract_detail_fields(self, html_text: str, include_images: bool) -> dict[str, Any]:
+        clean_text = self._clean_text(re.sub(r"<script.*?</script>|<style.*?</style>", " ", html_text, flags=re.I | re.S))
+        clean_text = self._clean_text(re.sub(r"<[^>]+>", " ", html.unescape(clean_text)))
+        result: dict[str, Any] = {"detail_text": clean_text[:3000]}
+        title_match = re.search(r"加入频道\s+(?:\d+/\d+\s+)?(?P<author>\S{1,40})?\s*(?P<body>.+?)\s+(?P<date>20\d{2}-\d{2}-\d{2})\s+浏览", clean_text)
+        if title_match:
+            body = self._clean_text(title_match.group("body"))
+            body = re.sub(r"^(复制图片\s*)+", "", body).strip()
+            if body:
+                result["content"] = body
+                result["title"] = self._derive_title(body)
+        view_match = re.search(r"浏览\s*(\d+)", clean_text)
+        if view_match:
+            result["view_count"] = self._safe_int(view_match.group(1))
+        comment_count_match = re.search(r"评论\s*(\d+)", clean_text)
+        if comment_count_match:
+            result["comment_count"] = self._safe_int(comment_count_match.group(1))
+        # Detail pages expose a small public comment preview between 热门 and 暂无更多评论.
+        comments: list[dict[str, Any]] = []
+        comment_area_match = re.search(r"热门\s+(?P<comments>.+?)\s+-\s*暂无更多评论", clean_text)
+        if comment_area_match:
+            comment_text = self._clean_text(comment_area_match.group("comments"))
+            for part in re.split(r"(?=(?:刚刚|昨天|前天|\d+\s*(?:分钟前|小时前|天前|周前|月前))\s+)", comment_text):
+                part = self._clean_text(part)
+                m = re.match(r"(?P<time>刚刚|昨天|前天|\d+\s*(?:分钟前|小时前|天前|周前|月前))\s+(?P<content>.+?)(?:\s+\d+\s+回复)?$", part)
+                if m and len(m.group("content")) >= 2:
+                    comments.append({"time": m.group("time"), "content": m.group("content")[:300]})
+        if comments:
+            result["comments"] = comments
+        if include_images:
+            image_urls = re.findall(r"https?://(?:channel|channelr|qqchannel-profile)[^\"'\s<>]+", html_text)
+            image_urls = [url for url in image_urls if not url.endswith('.svg') and 'share-logo' not in url and 'qqchannel-profile' not in url]
+            if image_urls:
+                result["images"] = list(dict.fromkeys(html.unescape(url) for url in image_urls))[:20]
+        return result
 
     def _filter_posts(
         self,
@@ -444,6 +674,11 @@ class QQChannelScraper:
     def _parse_publish_time(value: str) -> datetime | None:
         value = str(value or "").strip()
         now = datetime.now()
+        if re.match(r"^\d{4}-\d{2}-\d{2}T", value):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                pass
         match = re.search(r"(\d+)\s*分钟前", value)
         if match:
             return now - timedelta(minutes=int(match.group(1)))
@@ -466,6 +701,30 @@ class QQChannelScraper:
             except ValueError:
                 continue
         return None
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        try:
+            return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _format_publish_time_text(value: str) -> str:
+        parsed = QQChannelScraper._parse_publish_time(value)
+        if not parsed:
+            return value or ""
+        now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
+        delta = now - parsed
+        if delta.total_seconds() < 60:
+            return "刚刚"
+        if delta.total_seconds() < 3600:
+            return f"{max(int(delta.total_seconds() // 60), 1)}分钟前"
+        if delta.total_seconds() < 86400:
+            return f"{max(int(delta.total_seconds() // 3600), 1)}小时前"
+        if delta.days < 30:
+            return f"{delta.days}天前"
+        return parsed.strftime("%Y-%m-%d %H:%M")
 
     @staticmethod
     def _safe_int(value: Any) -> int:

@@ -48,7 +48,7 @@ class CampusChannelScrapeRequest(BaseModel):
     section: str | None = None
     keyword: str | None = None
     since_days: int | None = Field(default=7, ge=1, le=365)
-    include_images: bool = False
+    include_images: bool = True
     dry_run: bool = False
 
 
