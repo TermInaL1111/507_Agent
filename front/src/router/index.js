@@ -33,6 +33,10 @@ const routes = [
     }
   },
   {
+    path: '/ai-chat',
+    redirect: '/aichat'
+  },
+  {
     path: '/schedule',
     name: 'Schedule',
     component: () => import('../views/Schedule.vue'),
@@ -94,6 +98,10 @@ const routes = [
       title: 'AI问答',
       keepAlive: true
     }
+  },
+  {
+    path: '/ai-chat/:sessionId',
+    redirect: to => `/aichat/${to.params.sessionId}`
   },
   {
     path: '/my',
