@@ -16,6 +16,17 @@ def get_temp_dir() -> Path:
     return _TEMP_DIR
 
 
+def cleanup_old_files(temp_dir: Path | None = None, max_age_seconds: int = 1800) -> None:
+    """Delete generated documents older than max_age_seconds."""
+    import time
+
+    directory = temp_dir or _TEMP_DIR
+    now = time.time()
+    for file_path in directory.glob("*.docx"):
+        if now - file_path.stat().st_mtime > max_age_seconds:
+            file_path.unlink(missing_ok=True)
+
+
 @documents_router.get("/download/{file_id}")
 async def download_document(
     file_id: str,
