@@ -30,6 +30,11 @@
           <span>校园导航</span>
         </el-menu-item>
 
+        <el-menu-item index="/campus-channel">
+          <el-icon><Collection /></el-icon>
+          <span>校园频道</span>
+        </el-menu-item>
+
         <el-menu-item index="/sessions">
           <el-icon><ChatLineSquare /></el-icon>
           <span>会话记录</span>

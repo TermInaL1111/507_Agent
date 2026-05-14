@@ -551,3 +551,38 @@ cd front && npm install && npm run dev
 - `docs/github_setup.md`
 
 真实密码和 Key 只放在服务器本地 `.env` 文件中。
+
+
+## 校园频道功能
+
+校园频道模块聚合腾讯频道公开页面 `https://pd.qq.com/g/px50o26u67` 中无需登录即可访问的校园公开内容，保存为结构化帖子数据，并可同步到 RAG 知识库供 AI 问答使用。内容来源标记为“校园频道公开内容”，仅供信息聚合与问答参考，请以学校官方通知为准。
+
+### 后端接口
+
+- `POST /api/campus-channel/scrape`：手动采集公开频道内容，支持 `max_posts`、`section`、`keyword`、`since_days`、`include_images`、`dry_run`。
+- `GET /api/campus-channel/posts`：分页查看帖子，支持版块、关键词、时间、最新/热门、入库状态筛选。
+- `GET /api/campus-channel/posts/{id}`：查看帖子详情。
+- `DELETE /api/campus-channel/posts/{id}`：删除帖子。
+- `POST /api/campus-channel/sync-rag`：同步帖子到 RAG 知识库。
+- `GET /api/campus-channel/stats`：查看频道概览。
+
+### 使用步骤
+
+1. 启动服务后进入前端 `/campus-channel` 页面。
+2. 点击“刷新采集”获取公开频道内容。
+3. 点击“同步到知识库”将未入库帖子写入共享 RAG 知识库。
+4. 在 AI 问答中询问“最近校园里有什么通知？”、“有没有失物招领？”、“最近有什么比赛组队信息？”等问题验证效果。
+
+### 环境变量
+
+- `CAMPUS_CHANNEL_URL`：默认目标频道 URL。
+- `CAMPUS_CHANNEL_AUTO_SCRAPE`：是否启用定时采集，默认 `false`。
+- `CAMPUS_CHANNEL_SCRAPE_INTERVAL_MINUTES`：定时采集间隔，默认 `360`。
+- `CAMPUS_CHANNEL_AUTO_SYNC_RAG`：自动采集后是否同步 RAG，默认 `false`。
+- `CAMPUS_CHANNEL_MAX_POSTS_PER_RUN`：每次最多采集条数，默认 `50`。
+- `CAMPUS_CHANNEL_INCLUDE_IMAGES`：是否采集公开图片 URL，默认 `false`。
+- `CAMPUS_CHANNEL_USE_PLAYWRIGHT` / `CAMPUS_CHANNEL_HEADLESS`：预留可选浏览器采集配置，默认关闭。
+
+### 合规说明
+
+采集器只请求公开页面 HTML，不登录、不绕过验证码或权限控制、不发帖评论点赞，也不采集非公开内容。若页面拒绝访问或需要登录，接口会返回明确错误。

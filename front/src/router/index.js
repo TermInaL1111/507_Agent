@@ -73,6 +73,15 @@ const routes = [
     }
   },
   {
+    path: '/campus-channel',
+    name: 'CampusChannel',
+    component: () => import('../views/CampusChannel.vue'),
+    meta: {
+      title: '校园频道',
+      keepAlive: false
+    }
+  },
+  {
     path: '/document-assistant',
     name: 'DocumentAssistant',
     component: () => import('../views/DocumentAssistant.vue'),

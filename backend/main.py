@@ -17,6 +17,8 @@ from app.router.leave_redirect import leave_redirect_router
 from app.router.bookmarks import bookmarks_router
 from app.router.faq import faq_router
 from app.router.user import user_router
+from app.modules.campus_channel.router import campus_channel_router
+from app.modules.campus_channel.service import start_campus_channel_scheduler
 
 from app.services.database_session_manager import init_database_session_manager
 
@@ -55,6 +57,7 @@ app.include_router(faq_router)
 app.include_router(documents_router)
 app.include_router(leave_redirect_router)
 app.include_router(schedule_router)
+app.include_router(campus_channel_router)
 
 
 
@@ -98,6 +101,8 @@ async def startup_event():
     # 检查并重排序模型
     check_and_download_reranker_model()
     logger.info("重排序模型检查完成")
+
+    await start_campus_channel_scheduler()
 
     try:
         document_spec_store.index_all()

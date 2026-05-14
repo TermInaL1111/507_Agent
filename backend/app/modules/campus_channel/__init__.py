@@ -1,0 +1,1 @@
+"""Campus channel aggregation module."""

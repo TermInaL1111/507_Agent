@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 
@@ -69,3 +69,35 @@ class ScheduleEvent(Base):
     remark = Column(Text, default="")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+
+class CampusChannelPost(Base):
+    __tablename__ = "campus_channel_posts"
+    __table_args__ = (
+        UniqueConstraint("content_hash", name="uq_campus_channel_content_hash"),
+        UniqueConstraint("post_url", name="uq_campus_channel_post_url"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_platform = Column(String(32), default="qq_channel", index=True, nullable=False)
+    channel_url = Column(String(512), default="", nullable=False)
+    channel_name = Column(String(255), default="", nullable=False)
+    section_name = Column(String(128), default="", index=True)
+    post_url = Column(String(512), default="", nullable=False)
+    post_id = Column(String(128), default="", index=True)
+    author_name = Column(String(128), default="")
+    title = Column(String(512), default="")
+    content = Column(Text, default="")
+    summary = Column(Text, default="")
+    images = Column(JSON, default=list)
+    like_count = Column(Integer, default=0)
+    comment_count = Column(Integer, default=0)
+    share_count = Column(Integer, default=0)
+    view_count = Column(Integer, nullable=True)
+    publish_time_text = Column(String(64), default="")
+    publish_time = Column(DateTime(timezone=True), nullable=True, index=True)
+    scraped_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    content_hash = Column(String(64), default="", nullable=False, index=True)
+    is_indexed = Column(Boolean, default=False, nullable=False, index=True)
+    raw_data = Column(JSON, default=dict)

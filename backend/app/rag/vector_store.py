@@ -25,6 +25,11 @@ from app.core.logger_handler import logger
 from app.utils.path_tool import get_abstract_path
 
 ARTICLE_PATTERN = re.compile(r"第[一二三四五六七八九十百千万\d]+条")
+CAMPUS_CHANNEL_KEYWORDS = (
+    "校园频道", "最近", "通知", "失物招领", "寻物启事", "赛事组队", "二手交易",
+    "学习资料", "资料共享", "兼职", "热门", "学习交流", "地大频道", "频道里",
+)
+
 TRAINING_PROGRAM_KEYWORDS = (
     "培养方案", "培养计划", "专业", "学分", "毕业要求", "核心课程", "课程体系",
     "第几条", "第几章", "中国地质大学", "地大", "CUG"
@@ -38,6 +43,10 @@ def detect_article_query(query: str) -> str | None:
 
 def is_training_program_query(query: str) -> bool:
     return any(keyword.lower() in (query or "").lower() for keyword in TRAINING_PROGRAM_KEYWORDS)
+
+
+def is_campus_channel_query(query: str) -> bool:
+    return any(keyword.lower() in (query or "").lower() for keyword in CAMPUS_CHANNEL_KEYWORDS)
 
 
 class VectorStoreService:
@@ -68,6 +77,7 @@ class VectorStoreService:
         store = self._select_store(kb_type)
         article = detect_article_query(query)
         prefer_training_program = is_training_program_query(query)
+        prefer_campus_channel = is_campus_channel_query(query)
         fetch_k = int(chroma_config.get("fetch_k", chroma_config.get("k", 5)))
         final_k = int(chroma_config.get("k", 5))
         keyword_top_k = int(chroma_config.get("keyword_top_k", 10))
@@ -85,6 +95,14 @@ class VectorStoreService:
                 filter={"source": "training_program"},
             )
             vector_results = list(vector_results) + list(training_vector_results)
+        if prefer_campus_channel:
+            campus_vector_results = await asyncio.to_thread(
+                store.similarity_search_with_score,
+                query,
+                max(fetch_k, 50),
+                filter={"source_type": "campus_channel"},
+            )
+            vector_results = list(vector_results) + list(campus_vector_results)
 
         scored_docs: dict[str, tuple[Document, float]] = {}
         major_candidates = await self._detect_training_program_majors(query, kb_type) if prefer_training_program else []
@@ -103,6 +121,8 @@ class VectorStoreService:
             score = -float(distance or 0)
             if prefer_training_program and metadata.get("source") == "training_program":
                 score += 8.0
+            if prefer_campus_channel and metadata.get("source_type") == "campus_channel":
+                score += 10.0
             if metadata.get("major") and metadata.get("major") in major_candidates:
                 score += 5.0
             if article and article in (doc.page_content or ""):
@@ -111,7 +131,7 @@ class VectorStoreService:
             if key not in scored_docs or score > scored_docs[key][1]:
                 scored_docs[key] = (doc, score)
 
-        if article or prefer_training_program:
+        if article or prefer_training_program or prefer_campus_channel:
             all_docs = await self._get_all_documents(kb_type)
             query_for_terms = (query or "").replace(article, "") if article else (query or "")
             query_terms = [
@@ -123,6 +143,8 @@ class VectorStoreService:
                 metadata = doc.metadata or {}
                 text = doc.page_content or ""
                 if prefer_training_program and metadata.get("source") != "training_program":
+                    continue
+                if prefer_campus_channel and metadata.get("source_type") != "campus_channel":
                     continue
                 if article and article not in text:
                     continue

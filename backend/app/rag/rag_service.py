@@ -175,6 +175,10 @@ class RagService:
                 score += 10
                 score += sum(4 for term in query_terms if term in str(metadata.get("major", "")) or term in str(metadata.get("college", "")))
 
+            if metadata.get("source_type") == "campus_channel":
+                doc_name = metadata.get("doc_name") or f"校园频道 / {metadata.get('section_name', '')}"
+                kb_type = "shared"
+
             source = {
                 "source_id": source_id,
                 "file_id": file_id,
@@ -190,6 +194,12 @@ class RagService:
                 "relativePath": metadata.get("relativePath") or "",
                 "chunkIndex": metadata.get("chunkIndex", metadata.get("chunk_index", "")),
                 "fileType": metadata.get("fileType") or "",
+                "source_type": metadata.get("source_type") or "",
+                "section_name": metadata.get("section_name") or "",
+                "post_url": metadata.get("post_url") or "",
+                "publish_time": metadata.get("publish_time") or "",
+                "publish_time_text": metadata.get("publish_time_text") or "",
+                "channel_name": metadata.get("channel_name") or "",
             }
 
             current = candidates.get(content_key)
