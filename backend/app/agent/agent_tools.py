@@ -2,6 +2,7 @@ import contextvars
 import datetime
 import json
 import os
+import re
 from pathlib import Path
 from typing import List
 
@@ -10,6 +11,9 @@ from langchain_core.tools import tool
 from app.core.logger_handler import logger
 from app.db.db_config import AsyncSessionLocal
 from app.rag.rag_service import RagService
+from app.rag.vector_store import is_campus_channel_query
+from app.models.chat_history import CampusChannelPost
+from sqlalchemy import or_, select
 from app.rag.reorder_service import reorder_service
 from app.schemas.models import ScheduleEventCreate
 from app.services.campus_location_service import (
@@ -35,17 +39,99 @@ def set_agent_user_context(user_id: str):
 @tool(description="用于从向量数据库里检索文档并生成摘要，返回包含文档列表和摘要的结果。返回格式为：'摘要: [摘要内容]\n\n检索到的文档列表:\n1. [文档1内容]\n2. [文档2内容]\n...'。注意：文档已经过自动重排序，无需再调用重排序工具")
 async def rag_summary_tools(query: str) -> str:
     """RAG 摘要工具"""
+    if is_campus_channel_query(query):
+        campus_result = await _campus_channel_direct_result(query)
+        if campus_result:
+            return campus_result
+
     result = await RagService().get_documents_and_summary(query)
     documents = result.get("documents", [])
     summary = result.get("summary", "")
 
-    # 格式化返回结果
     formatted_result = f"摘要: {summary}\n\n"
     formatted_result += "检索到的文档列表（已重排序）:\n"
     for i, doc in enumerate(documents, 1):
-        formatted_result += f"{i}. {doc}\n"  # 显示完整文档内容
+        formatted_result += f"{i}. {doc}\n"
 
     return formatted_result
+
+
+async def _campus_channel_direct_result(query: str) -> str:
+    section_keywords = {
+        "通知": "通知",
+        "失物招领|寻物启事": "失物招领|寻物启事",
+        "寻物": "失物招领|寻物启事",
+        "失物": "失物招领|寻物启事",
+        "赛事组队": "赛事组队",
+        "组队": "赛事组队",
+        "二手交易": "二手交易",
+        "二手": "二手交易",
+        "资料": "期末｜资料共享",
+        "学习资料": "期末｜资料共享",
+        "学习交流": "学习交流",
+        "图书馆": "学习交流",
+    }
+    section = ""
+    for key, value in section_keywords.items():
+        if key in (query or ""):
+            section = value
+            break
+
+    explicit_terms = []
+    for term in ("图书馆", "兼职", "电动车", "校园卡", "资料", "真题", "考试", "比赛", "报名", "手机", "饭卡"):
+        if term in (query or "") and term not in explicit_terms:
+            explicit_terms.append(term)
+
+    async with AsyncSessionLocal() as db:
+        stmt = select(CampusChannelPost)
+        filters = []
+        if section:
+            filters.append(CampusChannelPost.section_name == section)
+        keyword_terms = explicit_terms
+        if keyword_terms:
+            likes = []
+            for term in keyword_terms[:4]:
+                like = f"%{term}%"
+                likes.extend([
+                    CampusChannelPost.title.like(like),
+                    CampusChannelPost.content.like(like),
+                    CampusChannelPost.summary.like(like),
+                    CampusChannelPost.section_name.like(like),
+                ])
+            filters.append(or_(*likes))
+        for condition in filters:
+            stmt = stmt.where(condition)
+        if "热门" in (query or ""):
+            hot_score = CampusChannelPost.like_count + CampusChannelPost.comment_count * 2 + CampusChannelPost.share_count * 3
+            stmt = stmt.order_by(hot_score.desc(), CampusChannelPost.publish_time.desc(), CampusChannelPost.scraped_at.desc())
+        else:
+            stmt = stmt.order_by(CampusChannelPost.publish_time.desc(), CampusChannelPost.scraped_at.desc())
+        rows = (await db.execute(stmt.limit(6))).scalars().all()
+
+        if not rows and filters:
+            fallback_stmt = select(CampusChannelPost).order_by(CampusChannelPost.publish_time.desc(), CampusChannelPost.scraped_at.desc()).limit(6)
+            rows = (await db.execute(fallback_stmt)).scalars().all()
+
+    if not rows:
+        return "摘要: 当前校园频道知识库中没有检索到相关信息。\n\n检索到的文档列表（已重排序）:\n"
+
+    summary_lines = ["以下是校园频道公开内容中检索到的相关帖子，请以学校官方通知为准："]
+    docs = []
+    for idx, post in enumerate(rows, 1):
+        time_text = post.publish_time_text or (post.publish_time.strftime("%Y-%m-%d %H:%M") if post.publish_time else "时间未知")
+        title = post.title or post.summary or post.content[:40]
+        summary = post.summary or post.content[:120]
+        summary_lines.append(f"{idx}. [{post.section_name or '其他版块'}] {title}（{time_text}）")
+        docs.append(
+            f"标题：{title}\n来源：校园频道公开内容 / {post.channel_name}\n版块：{post.section_name or '其他版块'}\n"
+            f"发布时间：{time_text}\n互动数据：点赞 {post.like_count}，评论 {post.comment_count}，分享 {post.share_count}\n"
+            f"正文：{post.content}\n摘要：{summary}"
+        )
+
+    formatted = "摘要: " + "\n".join(summary_lines) + "\n\n检索到的文档列表（已重排序）:\n"
+    for i, doc in enumerate(docs, 1):
+        formatted += f"{i}. {doc}\n"
+    return formatted
 
 @tool(description="用于对文档列表进行重排序，传入查询语句query和文档列表documents，返回重排序后的文档列表，包含文档内容和相似度。注意：rag_summary_tools已内置重排序功能，通常不需要单独调用此工具")
 async def reorder_documents_tools(query: str, documents: List[str]) -> str:

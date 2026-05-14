@@ -46,15 +46,36 @@ class QQChannelScraper:
         include_images: bool = False,
     ) -> list[CampusChannelPostCreate]:
         time.sleep(max(self.request_interval_seconds, 0))
-        if os.getenv("CAMPUS_CHANNEL_USE_PLAYWRIGHT", "false").lower() == "true":
-            html_text = self._fetch_with_playwright(channel_url)
-        else:
-            html_text = self._fetch_public_html(channel_url)
-        channel_name = self._extract_channel_name(html_text) or "中国地质大学（武汉）频道"
-        posts = self._extract_posts_from_html(html_text, channel_url, channel_name, include_images)
-        if not posts:
-            logger.warning("【校园频道】公开 HTML 中未发现可解析帖子，可能页面改为动态加载或需要登录")
-        filtered = self._filter_posts(posts, section=section, keyword=keyword, since_days=since_days)
+        mode = os.getenv("CAMPUS_CHANNEL_USE_PLAYWRIGHT", "auto").lower()
+        html_sources: list[tuple[str, str]] = []
+
+        if mode in {"true", "1", "yes", "auto"}:
+            try:
+                html_sources.append(("playwright", self._fetch_with_playwright(channel_url)))
+            except Exception as exc:
+                if mode in {"true", "1", "yes"}:
+                    raise
+                logger.warning(f"【校园频道】Playwright 采集不可用，回退静态 HTML: {exc}")
+
+        if mode in {"false", "0", "no", "auto"} or not html_sources:
+            html_sources.append(("static", self._fetch_public_html(channel_url)))
+
+        channel_name = "中国地质大学（武汉）频道"
+        all_posts: list[CampusChannelPostCreate] = []
+        seen = set()
+        for source_name, html_text in html_sources:
+            channel_name = self._extract_channel_name(html_text) or channel_name
+            posts = self._extract_posts_from_html(html_text, channel_url, channel_name, include_images)
+            logger.info(f"【校园频道】{source_name} 解析候选帖子 {len(posts)} 条")
+            for post in posts:
+                if post.content_hash in seen:
+                    continue
+                seen.add(post.content_hash)
+                all_posts.append(post)
+
+        if not all_posts:
+            logger.warning("【校园频道】公开页面中未发现可解析帖子，可能页面需要登录、限制访问或结构变化")
+        filtered = self._filter_posts(all_posts, section=section, keyword=keyword, since_days=since_days)
         return filtered[:max_posts]
 
     def _fetch_public_html(self, channel_url: str) -> str:
@@ -80,21 +101,78 @@ class QQChannelScraper:
         try:
             from playwright.sync_api import sync_playwright
         except Exception as exc:
-            raise RuntimeError("已启用 Playwright 采集，但后端环境未安装 playwright；请先安装依赖或关闭 CAMPUS_CHANNEL_USE_PLAYWRIGHT") from exc
+            raise RuntimeError("后端环境未安装 playwright，无法使用浏览器渲染采集") from exc
 
         headless = os.getenv("CAMPUS_CHANNEL_HEADLESS", "true").lower() != "false"
+        scrolls = self._safe_int(os.getenv("CAMPUS_CHANNEL_PLAYWRIGHT_SCROLLS", "6")) or 6
+        wait_ms = self._safe_int(os.getenv("CAMPUS_CHANNEL_PLAYWRIGHT_WAIT_MS", "800")) or 800
+        section_limit = self._safe_int(os.getenv("CAMPUS_CHANNEL_SECTION_SCAN_LIMIT", "20")) or 20
+        launch_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+
+        def tag_section_text(text: str, section_name: str) -> str:
+            if not section_name or section_name == "全部":
+                return text
+            time_pattern = r"(?=(?:刚刚|昨天|前天|\d+\s*(?:分钟前|小时前|天前|周前|月前))\s+)"
+            return re.sub(time_pattern, f"版块：{section_name} ", text)
+
+        collected_texts: list[str] = []
+        scan_sections = ["全部"] + SECTION_NAMES[:max(section_limit - 1, 0)]
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=headless)
-            page = browser.new_page(user_agent=self.user_agent)
+            browser = p.chromium.launch(headless=headless, args=launch_args)
+            page = browser.new_page(user_agent=self.user_agent, viewport={"width": 1365, "height": 1800})
             try:
-                response = page.goto(channel_url, wait_until="networkidle", timeout=20000)
+                response = page.goto(channel_url, wait_until="domcontentloaded", timeout=30000)
                 if response and response.status in (401, 403):
                     raise RuntimeError("校园频道公开页面拒绝访问或需要登录，已停止采集")
-                page.wait_for_timeout(1200)
-                body_text = page.locator("body").inner_text(timeout=5000)
-                if any(token in body_text for token in ("请登录", "扫码登录", "登录后查看")):
+                page.wait_for_timeout(wait_ms)
+                first_text = page.locator("body").inner_text(timeout=8000)
+                if any(token in first_text for token in ("请登录后查看", "登录后查看")):
                     raise RuntimeError("校园频道页面需要登录或限制访问，已停止采集")
-                return page.content()
+
+                for section_name in scan_sections:
+                    if section_name != "全部":
+                        try:
+                            page.get_by_text(section_name, exact=True).first.click(timeout=2500)
+                            page.wait_for_timeout(wait_ms)
+                        except Exception as exc:
+                            logger.debug(f"【校园频道】版块 {section_name} 点击失败，跳过: {exc}")
+                            continue
+
+                    stable_rounds = 0
+                    last_text = ""
+                    for round_index in range(max(scrolls, 1)):
+                        try:
+                            body_text = page.locator("body").inner_text(timeout=8000)
+                        except Exception:
+                            body_text = ""
+                        if body_text:
+                            collected_texts.append(tag_section_text(body_text, section_name))
+                        if round_index == max(scrolls, 1) - 1:
+                            break
+
+                        page.evaluate("""
+                            () => {
+                                const scrollables = [...document.querySelectorAll('*')]
+                                  .filter(el => el.scrollHeight > el.clientHeight + 100)
+                                  .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight));
+                                if (scrollables[0]) {
+                                  scrollables[0].scrollTop += Math.max(scrollables[0].clientHeight, 900);
+                                }
+                                window.scrollBy(0, 1200);
+                            }
+                        """)
+                        page.mouse.wheel(0, 1200)
+                        page.wait_for_timeout(wait_ms)
+                        if body_text and body_text == last_text:
+                            stable_rounds += 1
+                        else:
+                            stable_rounds = 0
+                        last_text = body_text
+                        if stable_rounds >= 2:
+                            break
+
+                collected_texts.append(page.content())
+                return "\n\n".join(dict.fromkeys(collected_texts))
             finally:
                 browser.close()
 
@@ -104,7 +182,7 @@ class QQChannelScraper:
             title = self._clean_text(title_match.group(1))
             title = re.sub(r"[-_].*$", "", title).strip()
             if title:
-                return title
+                return re.split(r"[｜|]", title, maxsplit=1)[0].strip() or title
         if "中国地质大学" in html_text:
             return "中国地质大学（武汉）频道"
         return ""
@@ -212,19 +290,34 @@ class QQChannelScraper:
         text = self._clean_text(re.sub(r"<[^>]+>", " ", html.unescape(text)))
         if len(text) < 80:
             return []
-        chunks = re.split(r"(?=(?:\d+\s*(?:小时前|分钟前|天前)|刚刚|昨天|前天))", text)
+
+        chunks = re.split(r"(?=(?:刚刚|昨天|前天|\d+\s*(?:分钟前|小时前|天前|周前|月前))\s+)", text)
         items = []
         for chunk in chunks:
             chunk = self._clean_text(chunk)
-            if len(chunk) < 30:
+            if len(chunk) < 20:
                 continue
-            if not any(section in chunk for section in SECTION_NAMES) and not re.search(r"\d+\s*(小时前|天前|分钟前)", chunk):
+            if "登录后加入频道即可发帖" in chunk or "不选择版块 发表 全部" in chunk:
                 continue
-            item = {"content": chunk[:1200], "time": self._extract_time_text(chunk)}
+            if not self._extract_time_text(chunk):
+                continue
+            section_from_marker = ""
+            marker_match = re.match(r"^(?P<prefix>(?:刚刚|昨天|前天|\d+\s*(?:分钟前|小时前|天前|周前|月前))\s+)版块：(?P<section>[^\s]+)\s+(?P<body>.+)$", chunk)
+            if marker_match:
+                section_from_marker = marker_match.group("section")
+                chunk = marker_match.group("prefix") + marker_match.group("body")
             parsed = self._parse_visible_post(chunk)
-            if parsed:
-                item.update(parsed)
-            items.append(item)
+            if not parsed:
+                parsed = {"content": self._trim_visible_chunk(chunk), "time": self._extract_time_text(chunk)}
+            if section_from_marker:
+                parsed["section"] = section_from_marker
+            content = self._clean_text(parsed.get("content", ""))
+            if len(content) < 8:
+                continue
+            parsed["content"] = content[:1200]
+            parsed.setdefault("title", self._derive_title(content))
+            parsed.setdefault("time", self._extract_time_text(chunk))
+            items.append(parsed)
         return items
 
     def _filter_posts(
@@ -250,20 +343,54 @@ class QQChannelScraper:
         return result
 
     @staticmethod
+    def _trim_visible_chunk(chunk: str) -> str:
+        chunk = re.sub(r"^(刚刚|昨天|前天|\d+\s*(?:分钟前|小时前|天前|周前|月前))\s+", "", chunk).strip()
+        chunk = re.split(r"\s+(?:点赞|评论|分享)\b", chunk, maxsplit=1)[0].strip()
+        return chunk
+
+    @staticmethod
     def _parse_visible_post(chunk: str) -> dict[str, Any] | None:
-        pattern = r"^(?P<time>刚刚|昨天|前天|\d+\s*(?:分钟前|小时前|天前|周前|月前))\s+(?P<body>.+?)\s+(?P<like>\d+)\s+(?P<comment>\d+)\s+(?P<share>\d+)\s+(?P<author>[^\s]{1,40})$"
-        match = re.match(pattern, chunk)
-        if not match:
+        time_match = re.match(r"^(?P<time>刚刚|昨天|前天|\d+\s*(?:分钟前|小时前|天前|周前|月前))\s+(?P<rest>.+)$", chunk)
+        if not time_match:
             return None
-        body = match.group("body").strip()
+        publish_text = time_match.group("time")
+        rest = time_match.group("rest").strip()
+
+        interaction_part = ""
+        body = rest
+        marker = re.search(r"\s+(点赞|评论|分享)\b", rest)
+        if marker:
+            body = rest[:marker.start()].strip()
+            interaction_part = rest[marker.start():]
+        else:
+            tail = re.match(r"(?P<body>.+?)\s+(?P<like>\d+)\s+(?P<comment>\d+)\s+(?P<share>\d+)\s+(?P<author>[^\s]{1,40})$", rest)
+            if tail:
+                body = tail.group("body").strip()
+                return {
+                    "content": body,
+                    "title": body[:80],
+                    "time": publish_text,
+                    "like_count": int(tail.group("like")),
+                    "comment_count": int(tail.group("comment")),
+                    "share_count": int(tail.group("share")),
+                    "author": tail.group("author"),
+                }
+
+        if not body or len(body) < 8:
+            return None
+        numbers = [int(x) for x in re.findall(r"\b\d+\b", interaction_part)[:3]]
+        author = ""
+        author_match = re.search(r"\b(?:点赞|评论|分享)\b.*?(?:\d+\s+){1,3}([^\s]{1,40})$", interaction_part)
+        if author_match:
+            author = author_match.group(1)
         return {
             "content": body,
             "title": body[:80],
-            "time": match.group("time"),
-            "like_count": int(match.group("like")),
-            "comment_count": int(match.group("comment")),
-            "share_count": int(match.group("share")),
-            "author": match.group("author"),
+            "time": publish_text,
+            "like_count": numbers[0] if len(numbers) > 0 else 0,
+            "comment_count": numbers[1] if len(numbers) > 1 else 0,
+            "share_count": numbers[2] if len(numbers) > 2 else 0,
+            "author": author,
         }
 
     @staticmethod
@@ -294,6 +421,17 @@ class QQChannelScraper:
             return raw
         for section in SECTION_NAMES:
             if section in content:
+                return section
+        keyword_sections = [
+            ("失物招领|寻物启事", ("丢", "捡", "失物", "寻物", "遗失", "找", "不见")),
+            ("二手交易", ("出", "收", "二手", "转让", "闲置", "电动车", "价格", "元")),
+            ("赛事组队", ("组队", "比赛", "竞赛", "队友", "招募")),
+            ("期末｜资料共享", ("资料", "期末", "复习", "真题", "答案")),
+            ("学习交流", ("图书馆", "自习", "课程", "学习", "考试")),
+            ("通知", ("通知", "公告", "报名", "截止", "安排")),
+        ]
+        for section, keywords in keyword_sections:
+            if any(keyword in content for keyword in keywords):
                 return section
         return "其他版块"
 
