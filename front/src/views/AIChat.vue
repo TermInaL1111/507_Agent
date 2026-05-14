@@ -1037,6 +1037,25 @@ const sendMessage = async () => {
     let successCount = 0;
     let totalEvents = 0;
     let totalDuplicates = 0;
+    let totalConflicts = 0;
+    const weekdayMap = {
+      Monday: '周一',
+      Tuesday: '周二',
+      Wednesday: '周三',
+      Thursday: '周四',
+      Friday: '周五',
+      Saturday: '周六',
+      Sunday: '周日'
+    };
+    const formatConflictLine = (conflict) => {
+      const uploaded = conflict.uploaded || {};
+      const existing = conflict.existing || {};
+      const day = weekdayMap[uploaded.weekday] || uploaded.weekday || '未知星期';
+      const uploadedTime = `${uploaded.startTime || '--:--'}-${uploaded.endTime || '--:--'}`;
+      const existingTime = `${existing.startTime || '--:--'}-${existing.endTime || '--:--'}`;
+      const existingLocation = existing.location ? ` @ ${existing.location}` : '';
+      return `${day} ${uploadedTime}「${uploaded.title || '未命名课程'}」与已有「${existing.title || '未命名课程'}」${existingTime}${existingLocation} 时间冲突`;
+    };
     for (let i = 0; i < pendingFiles.value.length; i++) {
       uploadingFile.value = i;
       try {
@@ -1045,14 +1064,23 @@ const sendMessage = async () => {
         successCount++;
         const importedCount = result.events_count || 0;
         const duplicateCount = result.duplicates_skipped || 0;
+        const conflictCount = result.conflicts_count || 0;
         const parsedCount = result.parsed_count || importedCount + duplicateCount;
+        const conflictLines = (result.conflicts || []).slice(0, 6).map(formatConflictLine);
         totalEvents += importedCount;
         totalDuplicates += duplicateCount;
+        totalConflicts += conflictCount;
         if (importedCount > 0) {
-          const duplicateText = duplicateCount > 0 ? `，另有 ${duplicateCount} 条已存在并跳过` : '';
-          fileContext += `\n📎 已从「${file.name}」导入 ${importedCount} 条课表${duplicateText}。`;
-        } else if (duplicateCount > 0) {
-          fileContext += `\n📎 已识别「${file.name}」中的 ${parsedCount} 条课表，但这些安排已存在，未重复添加。`;
+          const conflictText = conflictCount > 0 ? `，另有 ${conflictCount} 条存在时间冲突，未重复添加` : '';
+          fileContext += `\n📎 已从「${file.name}」导入 ${importedCount} 条课表${conflictText}。`;
+          if (conflictLines.length) {
+            fileContext += `\n⚠️ 存在时间冲突：\n- ${conflictLines.join('\n- ')}`;
+          }
+        } else if (conflictCount > 0 || duplicateCount > 0) {
+          fileContext += `\n📎 已识别「${file.name}」中的 ${parsedCount} 条课表，但全部与当前时间表存在时间冲突，未重复添加。`;
+          if (conflictLines.length) {
+            fileContext += `\n⚠️ 时间冲突明细：\n- ${conflictLines.join('\n- ')}`;
+          }
         } else {
           fileContext += `\n📎 已上传「${file.name}」${result.warning ? '（' + result.warning + '）' : ''}。`;
         }
@@ -1064,7 +1092,8 @@ const sendMessage = async () => {
     if (successCount > 0) {
       const parts = [`${successCount}/${fileCount} 个文件上传成功`];
       if (totalEvents > 0) parts.push(`${totalEvents} 条课表已导入`);
-      if (totalDuplicates > 0) parts.push(`${totalDuplicates} 条重复课表已跳过`);
+      if (totalConflicts > 0) parts.push(`${totalConflicts} 条时间冲突未添加`);
+      else if (totalDuplicates > 0) parts.push(`${totalDuplicates} 条重复课表已跳过`);
       ElMessage.success(parts.join('，'));
     }
     pendingFiles.value = [];

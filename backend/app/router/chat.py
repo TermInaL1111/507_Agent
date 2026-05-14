@@ -52,6 +52,37 @@ _COURSE_LINE_RE = re.compile(
 _DETAIL_KV_RE = re.compile(r"\s*/?\s*([^:：/]+)[:：]\s*([^/]*)")
 
 
+def _time_to_minutes(value: str) -> int:
+    hour, minute = value.split(":", 1)
+    return int(hour) * 60 + int(minute)
+
+
+def _events_overlap(start_a: str, end_a: str, start_b: str, end_b: str) -> bool:
+    return _time_to_minutes(start_a) < _time_to_minutes(end_b) and _time_to_minutes(end_a) > _time_to_minutes(start_b)
+
+
+def _format_schedule_conflict(uploaded: dict, existing_event) -> dict:
+    return {
+        "uploaded": {
+            "title": uploaded.get("title", ""),
+            "weekday": uploaded.get("weekday", ""),
+            "startTime": uploaded.get("startTime", ""),
+            "endTime": uploaded.get("endTime", ""),
+            "location": uploaded.get("location", ""),
+            "teacher": uploaded.get("teacher", ""),
+        },
+        "existing": {
+            "id": existing_event.id,
+            "title": existing_event.title,
+            "weekday": existing_event.weekday,
+            "startTime": existing_event.startTime,
+            "endTime": existing_event.endTime,
+            "location": existing_event.location,
+            "teacher": existing_event.teacher,
+        },
+    }
+
+
 def _section_to_time(section_start: str, section_end: str) -> tuple[str, str]:
     """节次号 → 实际时间，未知节次按递推估算。"""
     key = (section_start, section_end)
@@ -217,14 +248,18 @@ async def upload_schedule_pdf(
         from app.services.schedule_service import list_week_events as svc_list_events
         existing = await svc_list_events(db, user_id)
         skipped = 0
+        conflicts = []
         for item in parsed_items:
             try:
-                # Check for duplicate
-                dup = [e for e in existing
-                       if e.title == item["title"] and e.weekday == item["weekday"]
-                       and e.startTime == item["startTime"] and e.endTime == item["endTime"]]
-                if dup:
+                # Do not import events that overlap existing schedule slots.
+                overlapping = [
+                    e for e in existing
+                    if e.weekday == item["weekday"]
+                    and _events_overlap(item["startTime"], item["endTime"], e.startTime, e.endTime)
+                ]
+                if overlapping:
                     skipped += 1
+                    conflicts.extend(_format_schedule_conflict(item, e) for e in overlapping)
                     continue
 
                 payload = ScheduleEventCreate(
@@ -262,6 +297,8 @@ async def upload_schedule_pdf(
         "events_count": len(created_events),
         "parsed_count": len(parsed_items),
         "duplicates_skipped": skipped,
+        "conflicts_count": len(conflicts),
+        "conflicts": conflicts,
         "warning": warning or None,
     })
 
