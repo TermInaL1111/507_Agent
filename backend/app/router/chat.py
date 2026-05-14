@@ -246,52 +246,59 @@ async def upload_schedule_pdf(
     parsed_items, warning = _parse_schedule_pdf_text(full_text)
 
     # 5. 创建日程事件
+    # Atomic import rule: if any parsed course conflicts with existing schedule,
+    # do not import any rows from this PDF. This prevents re-uploading a mostly
+    # duplicate timetable from silently restoring courses the user deleted.
     set_agent_user_context(user_id)
     created_events = []
+    skipped = 0
+    conflicts = []
     async with AsyncSessionLocal() as db:
-        # Load existing events once for dedup check
         from app.services.schedule_service import list_week_events as svc_list_events
-        existing = await svc_list_events(db, user_id)
-        skipped = 0
-        conflicts = []
-        for item in parsed_items:
-            try:
-                # Do not import events that overlap existing schedule slots.
-                overlapping = [
-                    e for e in existing
-                    if e.weekday == item["weekday"]
-                    and _events_overlap(item["startTime"], item["endTime"], e.startTime, e.endTime)
-                ]
-                if overlapping:
-                    skipped += 1
-                    conflicts.extend(_format_schedule_conflict(item, e) for e in overlapping)
-                    continue
 
-                payload = ScheduleEventCreate(
-                    title=item["title"],
-                    type="course",
-                    weekday=item["weekday"],
-                    startTime=item["startTime"],
-                    endTime=item["endTime"],
-                    location=item.get("location", ""),
-                    date="",
-                    teacher=item.get("teacher", ""),
-                    repeat="weekly",
-                    source="pdf_upload",
-                    remark=item.get("remark", f"从 {source_file.original_filename} 导入"),
-                )
-                event = await svc_create_event(db, user_id, payload)
-                existing.append(event)
-                created_events.append({
-                    "id": event.id,
-                    "title": event.title,
-                    "weekday": event.weekday,
-                    "startTime": event.startTime,
-                    "endTime": event.endTime,
-                    "location": event.location,
-                })
-            except Exception as e:
-                logger.warning(f"【课表上传】创建事件失败: {item} -> {e}")
+        existing = await svc_list_events(db, user_id)
+        for item in parsed_items:
+            overlapping = [
+                e for e in existing
+                if e.weekday == item["weekday"]
+                and _events_overlap(item["startTime"], item["endTime"], e.startTime, e.endTime)
+            ]
+            conflicts.extend(_format_schedule_conflict(item, e) for e in overlapping)
+
+        if conflicts:
+            skipped = len(parsed_items)
+            logger.info(
+                f"【课表上传】检测到 {len(conflicts)} 条时间冲突，整份课表不导入: "
+                f"{source_file.original_filename}"
+            )
+        else:
+            for item in parsed_items:
+                try:
+                    payload = ScheduleEventCreate(
+                        title=item["title"],
+                        type="course",
+                        weekday=item["weekday"],
+                        startTime=item["startTime"],
+                        endTime=item["endTime"],
+                        location=item.get("location", ""),
+                        date="",
+                        teacher=item.get("teacher", ""),
+                        repeat="weekly",
+                        source="pdf_upload",
+                        remark=item.get("remark", f"从 {source_file.original_filename} 导入"),
+                    )
+                    event = await svc_create_event(db, user_id, payload)
+                    existing.append(event)
+                    created_events.append({
+                        "id": event.id,
+                        "title": event.title,
+                        "weekday": event.weekday,
+                        "startTime": event.startTime,
+                        "endTime": event.endTime,
+                        "location": event.location,
+                    })
+                except Exception as e:
+                    logger.warning(f"【课表上传】创建事件失败: {item} -> {e}")
 
     text_preview = full_text[:500] if len(full_text) > 500 else full_text
     return success_response(data={
@@ -342,9 +349,15 @@ def _format_conflict_message(filename: str, parsed_count: int, conflicts: list[d
     if len(conflicts) > len(lines):
         more = f"\n- 另外还有 {len(conflicts) - len(lines)} 条冲突未展开。"
 
+    conflict_summary = (
+        "这些记录与当前时间表存在时间冲突"
+        if len(conflicts) >= parsed_count
+        else f"其中 {len(conflicts)} 条记录与当前时间表存在时间冲突"
+    )
+
     return (
         f"我检查了你刚上传的「{filename}」，识别出 {parsed_count} 条课表记录。\n\n"
-        f"⚠️ 这些记录与当前时间表存在时间冲突，所以没有重复添加。\n\n"
+        f"⚠️ {conflict_summary}。为避免重复导入或把你已删除的课程自动补回，本次没有导入这份 PDF 中的任何课程。\n\n"
         f"时间冲突明细：\n" + "\n".join(lines) + more +
         "\n\n如果你想用这份 PDF 覆盖当前课表，请先清空或删除已有冲突课程，再重新导入。"
     )
