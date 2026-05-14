@@ -2,6 +2,7 @@ import json
 import re
 from typing import List
 import uuid
+from pydantic import BaseModel, Field
 
 from fastapi.routing import APIRouter
 from fastapi import UploadFile, File, Depends, HTTPException
@@ -13,6 +14,9 @@ from app.utils.django_user_client import set_agent_jwt_token
 from app.utils.auth_utils import security
 from app.core.logger_handler import logger
 from sqlalchemy import select
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from app.utils.factory import chat_model
 
 from app.db.db_config import AsyncSessionLocal
 from app.models.chat_history import SourceFile
@@ -26,6 +30,20 @@ from app.utils.auth_utils import get_current_user_id
 from app.utils.file_handler import pdf_loader
 from app.core.success_response import success_response
 from app.core.rate_limit import rate_limit
+
+
+
+
+class FollowupRequest(BaseModel):
+    query: str = ""
+    answer: str = ""
+    sources: list[dict] = Field(default_factory=list)
+    tool_calls: list[dict] = Field(default_factory=list)
+    result_card: dict | None = None
+
+
+class FollowupResponse(BaseModel):
+    questions: list[str] = Field(default_factory=list)
 
 
 chat_router = APIRouter(prefix="/api", tags=["api"])
@@ -417,6 +435,74 @@ async def _single_response_stream(query: str, session_id: str, user_id: str, con
     stored_response = json.dumps({"content": content, "card": None, "tool_calls": []}, ensure_ascii=False)
     await sm.session_manager.add_message(session_id, user_id, query, stored_response)
     yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'sources': [], 'credibility': {'level': 'high', 'label': '基于课表冲突检测', 'icon': '⚠️', 'detail': '由系统解析上传 PDF 并比对当前时间表'}}, ensure_ascii=False)}\n\n"
+
+
+def _fallback_followups(payload: FollowupRequest) -> list[str]:
+    text = f"{payload.query}\n{payload.answer}\n{json.dumps(payload.sources, ensure_ascii=False)}"
+    if any(k in text for k in ("校园频道", "二手交易", "失物招领", "学习交流", "公开频道")):
+        if "二手" in text:
+            return ["校园频道里还有哪些二手交易？", "这些二手交易里有没有电子产品？", "最近二手交易有哪些热门内容？", "帮我同步最新校园频道内容"]
+        if "失物" in text or "寻物" in text:
+            return ["最近还有哪些失物招领？", "有没有校园卡或证件相关寻物？", "这些失物招领是什么时候发布的？", "帮我刷新校园频道失物招领"]
+        return ["最近校园频道有什么通知？", "校园频道里有什么学习资料分享？", "最近有哪些赛事组队信息？", "校园频道最近有什么热门内容？"]
+    if any(k in text for k in ("课表", "日程", "课程")):
+        return ["今天还有哪些课？", "帮我查看本周完整课表", "我的日程里有没有时间冲突？", "明天第一节课在哪里？"]
+    if any(k in text for k in ("请假", "文书", "申请")):
+        return ["帮我生成一份请假条", "请假条需要哪些信息？", "能按我的课表填写请假时间吗？", "帮我检查文书是否完整"]
+    if any(k in text for k in ("导航", "图书馆", "地点", "在哪里")):
+        return ["帮我导航到这个地点", "这个地点附近有什么教学楼？", "从宿舍到这里怎么走？", "这个地点属于哪个校区？"]
+    return ["能给我更具体的办理步骤吗？", "这件事需要准备哪些材料？", "有没有相关注意事项？", "能帮我整理成清单吗？"]
+
+
+async def _generate_followups(payload: FollowupRequest) -> list[str]:
+    compact_sources = []
+    for source in (payload.sources or [])[:4]:
+        compact_sources.append({
+            "name": source.get("doc_name") or source.get("source") or source.get("channel_name") or "",
+            "category": source.get("category") or source.get("section_name") or "",
+            "snippet": (source.get("snippet") or "")[:220],
+            "source_type": source.get("source_type") or "",
+        })
+    prompt = PromptTemplate.from_template(
+        "你是学生智能服务 Agent 的追问生成器。请基于用户刚才的问题、AI回答和来源，生成4个自然、有用、具体的中文追问。\n"
+        "要求：\n"
+        "1. 必须贴合当前回答内容，不要使用固定模板；\n"
+        "2. 如果来源是校园频道，追问应围绕版块、发布时间、热门程度、相关帖子继续问；\n"
+        "3. 如果是课表/导航/文书/办事流程，追问应引导下一步操作；\n"
+        "4. 每个问题不超过28个字；\n"
+        "5. 只输出JSON数组，例如 [\"问题1\",\"问题2\"]。\n\n"
+        "用户问题：{query}\n\nAI回答：{answer}\n\n来源：{sources}\n\n工具信息：{tools}"
+    )
+    try:
+        chain = prompt | chat_model | StrOutputParser()
+        raw = await chain.ainvoke({
+            "query": (payload.query or "")[:300],
+            "answer": (payload.answer or "")[:1200],
+            "sources": json.dumps(compact_sources, ensure_ascii=False),
+            "tools": json.dumps(payload.tool_calls or [], ensure_ascii=False)[:800],
+        })
+        match = re.search(r"\[[\s\S]*\]", raw or "")
+        items = json.loads(match.group(0) if match else raw)
+        questions = []
+        for item in items:
+            q = str(item.get("question") if isinstance(item, dict) else item).strip()
+            q = re.sub(r"^[\-\d.、\s]+", "", q)
+            if q and q not in questions:
+                questions.append(q[:36])
+        if len(questions) >= 3:
+            return questions[:4]
+    except Exception as e:
+        logger.warning(f"【智能追问】生成失败，使用兜底: {e}")
+    return _fallback_followups(payload)
+
+
+@chat_router.post("/agent/followups", response_model=FollowupResponse)
+async def agent_followups(
+        payload: FollowupRequest,
+        _: str = Depends(get_current_user_id),
+        __: None = Depends(rate_limit(limit=60, window=60))
+):
+    return FollowupResponse(questions=await _generate_followups(payload))
 
 
 @chat_router.post("/agent/query/stream")

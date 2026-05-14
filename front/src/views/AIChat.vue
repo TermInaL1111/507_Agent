@@ -313,9 +313,9 @@
               </button>
             </div>
 
-            <div v-if="message.role === 'assistant' && message.content && faqFollowups.length && index === messages.length - 1" class="followup-chips">
+            <div v-if="message.role === 'assistant' && message.content && followupsForLastMessage.length && index === messages.length - 1" class="followup-chips">
               <span class="followup-label">💬 你可能还想问：</span>
-              <span v-for="(q, qi) in faqFollowups.slice(0, 4)" :key="qi" class="followup-chip" @click="sendFollowup(q.question)">{{ q.question }}</span>
+              <span v-for="(q, qi) in followupsForLastMessage" :key="qi" class="followup-chip" @click="sendFollowup(q)">{{ q }}</span>
             </div>
           </div>
         </div>
@@ -429,6 +429,8 @@ const selectedSource = ref(null);
 const isDownloadingSource = ref(false);
 const pendingFiles = ref([]);
 const faqQuestions = ref([]);
+const smartFollowups = ref([]);
+const followupLoading = ref(false);
 
 const loadFaqQuestions = async () => {
   try {
@@ -1090,6 +1092,7 @@ const sendMessage = async () => {
   isLoading.value = true;
   try {
     await fetchAIResponse(userMessage);
+    await loadSmartFollowups(userMessage);
   } catch (error) {
     console.error('Error fetching AI response:', error);
     if (error.authRequired) {
@@ -1328,6 +1331,7 @@ const startNewSession = () => {
   messages.value = [{ role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', sources: [], resultCard: null }];
   sessionId.value = '';
   userInput.value = '';
+  smartFollowups.value = [];
   router.replace('/aichat');
 };
 
@@ -1447,20 +1451,23 @@ const toggleBookmark = async (message) => {
 
 const followupSeed = ref(0);
 const campusSuggestions = [
-  '奖学金申请条件是什么', '缓考怎么办理', '图书馆在哪里',
-  '如何申请助学贷款', '宿舍管理规定有哪些', '今天的课表是什么',
-  '考试违纪怎么处理', '怎么办理请假手续', '计算机学院有哪些老师',
+  '最近校园频道有什么通知？', '校园频道里有什么二手交易？', '最近有哪些失物招领？',
+  '有什么学习资料分享？', '最近有什么赛事组队？', '校园频道热门内容有哪些？',
 ];
 
 const isNewSession = computed(() => {
   return messages.value.length === 1 && messages.value[0].role === 'assistant' && !sessionId.value;
 });
 
-const faqFollowups = computed(() => {
+const fallbackFollowups = computed(() => {
+  const latestAssistant = [...messages.value].reverse().find(m => m.role === 'assistant' && m.content);
+  const text = latestAssistant?.content || '';
+  if (latestAssistant?.sources?.some(s => s.source_type === 'campus_channel') || /校园频道|二手交易|失物招领|学习交流/.test(text)) {
+    return campusSuggestions.slice(0, 4);
+  }
   if (!faqQuestions.value.length) return [];
-  // Seed-based shuffle for stability within a render, re-shuffle when seed changes
   const rng = (seed) => { let x = Math.sin(seed) * 10000; return x - Math.floor(x); };
-  const items = [...faqQuestions.value];
+  const items = [...faqQuestions.value].map(q => q.question || q).filter(Boolean);
   for (let i = items.length - 1; i > 0; i--) {
     const j = Math.floor(rng(followupSeed.value + i) * (i + 1));
     [items[i], items[j]] = [items[j], items[i]];
@@ -1468,7 +1475,55 @@ const faqFollowups = computed(() => {
   return items.slice(0, 4);
 });
 
-// Re-shuffle followups when a new AI message arrives
+const followupsForLastMessage = computed(() => {
+  return (smartFollowups.value.length ? smartFollowups.value : fallbackFollowups.value).slice(0, 4);
+});
+
+const extractLatestUserQuestion = () => {
+  const latest = [...messages.value].reverse().find(m => m.role === 'user' && m.content);
+  return latest?.content || '';
+};
+
+const localFollowupsFromContext = (assistant, query) => {
+  const text = `${query}\n${assistant?.content || ''}`;
+  if (assistant?.sources?.some(s => s.source_type === 'campus_channel') || /校园频道|二手交易|失物招领|寻物|赛事组队|资料共享/.test(text)) {
+    if (/二手/.test(text)) return ['还有哪些二手交易？', '有没有电子产品转让？', '这些内容什么时候发布的？', '帮我刷新校园频道内容'];
+    if (/失物|寻物/.test(text)) return ['最近还有哪些失物招领？', '有没有证件或校园卡寻物？', '这些帖子发布时间是什么？', '帮我看相关公开评论'];
+    return ['最近校园频道有什么通知？', '有哪些学习资料分享？', '有什么赛事组队信息？', '校园频道热门内容有哪些？'];
+  }
+  if (/课表|日程|课程/.test(text)) return ['今天还有哪些课？', '本周课表完整列一下', '我的日程有冲突吗？', '明天第一节课在哪里？'];
+  if (/请假|文书|申请/.test(text)) return ['帮我生成对应文书', '需要补充哪些信息？', '能帮我检查格式吗？', '可以导出 Word 吗？'];
+  return fallbackFollowups.value;
+};
+
+const loadSmartFollowups = async (query = '') => {
+  const assistant = messages.value[messages.value.length - 1];
+  if (!assistant || assistant.role !== 'assistant' || !assistant.content) return;
+  followupLoading.value = true;
+  smartFollowups.value = [];
+  try {
+    const resp = await fetch('/api/agent/followups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userStore.getToken}` },
+      body: JSON.stringify({
+        query: query || extractLatestUserQuestion(),
+        answer: assistant.content,
+        sources: assistant.sources || [],
+        tool_calls: assistant.toolCalls || [],
+        result_card: assistant.resultCard || null,
+      }),
+    });
+    if (!resp.ok) throw new Error('followup request failed');
+    const data = await resp.json();
+    const questions = (data.questions || []).map(q => String(q).trim()).filter(Boolean);
+    smartFollowups.value = questions.length ? questions.slice(0, 4) : localFollowupsFromContext(assistant, query);
+  } catch (error) {
+    smartFollowups.value = localFollowupsFromContext(assistant, query);
+  } finally {
+    followupLoading.value = false;
+  }
+};
+
 watch(() => messages.value.filter(m => m.role === 'assistant').length, () => {
   followupSeed.value = Date.now();
 });
