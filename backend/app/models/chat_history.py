@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, JSON, UniqueConstraint, Index
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
 
@@ -77,6 +77,34 @@ class UserSettings(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String(64), unique=True, index=True, nullable=False)
     auto_timeline_from_logs_enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class StudentSuccessTask(Base):
+    __tablename__ = "student_success_tasks"
+    __table_args__ = (
+        Index("ix_student_success_user_due", "user_id", "due_at"),
+        Index("ix_student_success_user_status", "user_id", "status"),
+        Index("ix_student_success_source", "source_type", "source_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, default="")
+    task_type = Column(String(32), default="other", index=True)
+    source_type = Column(String(32), default="manual", index=True)
+    source_id = Column(String(128), default="", index=True)
+    due_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    priority = Column(String(16), default="medium", index=True)
+    status = Column(String(16), default="pending", index=True)
+    ai_generated = Column(Boolean, default=False, nullable=False, index=True)
+    requires_confirmation = Column(Boolean, default=False, nullable=False, index=True)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    ignored_at = Column(DateTime(timezone=True), nullable=True)
+    metadata_ = Column(JSON, name="metadata", default=dict)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

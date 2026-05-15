@@ -25,6 +25,11 @@
           <span>课表日程</span>
         </el-menu-item>
 
+        <el-menu-item index="/student-success">
+          <el-icon><TrendCharts /></el-icon>
+          <span>学生成功中心</span>
+        </el-menu-item>
+
         <el-menu-item index="/campus-map">
           <el-icon><MapLocation /></el-icon>
           <span>校园导航</span>

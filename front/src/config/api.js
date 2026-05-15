@@ -18,6 +18,9 @@ export const apiConfig = {
     register: '/user/register/',
     profile: '/user/detail/',
     userSettings: '/api/user/settings',
+    studentSuccessOverview: '/api/student-success/overview',
+    studentSuccessTasks: '/api/student-success/tasks',
+    studentSuccessGenerate: '/api/student-success/generate',
     
     // 文件上传
     uploadFile: '/file/upload/',

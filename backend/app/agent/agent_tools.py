@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 from langchain_core.tools import tool
+from fastapi.encoders import jsonable_encoder
 
 from app.core.logger_handler import logger
 from app.db.db_config import AsyncSessionLocal
@@ -30,6 +31,8 @@ from app.services.schedule_service import (
 )
 from app.services.user_settings_service import is_auto_timeline_enabled
 from app.utils.auth_utils import decode_django_jwt
+from app.modules.student_success.schemas import StudentTaskCreate, StudentTaskGenerateRequest, StudentTaskUpdate
+from app.modules.student_success.service import StudentSuccessService
 
 _current_user_id = contextvars.ContextVar("current_user_id", default="")
 
@@ -295,6 +298,93 @@ async def create_schedule_event(
     if conflict_card:
         result += conflict_card
     return result
+
+
+# ── Student success center tools ────────────────────────────────
+
+def _task_card(title: str, tasks: list[dict]) -> str:
+    card = json.dumps(jsonable_encoder({"type": "tasks", "title": title, "tasks": tasks}), ensure_ascii=False)
+    return f"\n<!--CARD:{card}-->"
+
+
+@tool(description="查询学生成功中心今日待办。无需参数，返回当前用户今天需要关注的任务。")
+async def get_student_success_today() -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    async with AsyncSessionLocal() as db:
+        overview = await StudentSuccessService(db).overview(user_id)
+    tasks = overview.get("todayTasks", [])
+    if not tasks:
+        return "今天暂无待办任务。"
+    lines = []
+    card_tasks = []
+    for task in tasks[:8]:
+        due = task.get("due_at") or ""
+        lines.append(f"- {task['title']}（{task['priority']}，{task['source_type']}）")
+        card_tasks.append({"id": task["id"], "title": task["title"], "due_at": due, "priority": task["priority"], "status": task["status"]})
+    return "今日待办：\n" + "\n".join(lines) + _task_card("今日待办", card_tasks)
+
+
+@tool(description="查询学生成功中心未来7天重要事项，合并任务和课表时间线。无需参数。")
+async def get_student_success_week() -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    async with AsyncSessionLocal() as db:
+        overview = await StudentSuccessService(db).overview(user_id)
+    timeline = overview.get("timeline", [])
+    if not timeline:
+        return "未来 7 天暂未发现重要事项。"
+    lines = [f"- {item.get('date')} {item.get('time')} {item.get('title')}（{item.get('source')}）" for item in timeline[:12]]
+    return "未来 7 天重要事项：\n" + "\n".join(lines)
+
+
+@tool(description="在学生成功中心创建一个手动任务。title:标题；description:说明；due_at:截止时间ISO格式，可为空；priority: low/medium/high/urgent。")
+async def create_student_success_task(title: str, description: str = "", due_at: str = "", priority: str = "medium") -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    due_value = None
+    if due_at:
+        try:
+            due_value = datetime.datetime.fromisoformat(due_at.replace("Z", "+00:00"))
+        except Exception:
+            return "截止时间格式不正确，请使用 YYYY-MM-DDTHH:MM:SS。"
+    async with AsyncSessionLocal() as db:
+        task = await StudentSuccessService(db).create_manual_task(
+            user_id,
+            StudentTaskCreate(title=title, description=description, due_at=due_value, priority=priority, task_type="manual"),
+        )
+    return f"已加入待办：【{task.title}】{task.due_at or ''}" + _task_card("新增任务", [task.model_dump()])
+
+
+@tool(description="标记学生成功中心任务完成。task_id: 任务ID。")
+async def complete_student_success_task(task_id: int) -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    async with AsyncSessionLocal() as db:
+        task = await StudentSuccessService(db).update_task(user_id, task_id, StudentTaskUpdate(status="completed"))
+    return f"已标记完成：【{task.title}】"
+
+
+@tool(description="根据指定来源生成学生成功中心任务建议。source: schedule/campus_channel/cultivation_plan/consultation_log。咨询日志来源会受隐私开关控制。")
+async def generate_student_success_suggestions(source: str = "schedule") -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    allowed = {"schedule", "campus_channel", "cultivation_plan", "consultation_log"}
+    source = source if source in allowed else "schedule"
+    async with AsyncSessionLocal() as db:
+        items, skipped = await StudentSuccessService(db).generate_suggestions(user_id, [source], 7)
+    if not items:
+        if source == "consultation_log":
+            return "没有生成新的咨询日志任务建议；如果你关闭了“根据咨询日志自动生成时间节点”，系统会跳过该来源。"
+        return f"没有生成新的任务建议，已跳过 {skipped} 条相似任务。"
+    lines = [f"- {item.title}（来源：{item.source_type}，优先级：{item.priority}）" for item in items[:8]]
+    extra = "\n校园频道内容仅供信息聚合与问答参考，请以学校官方通知为准。" if source == "campus_channel" else ""
+    return "已生成以下待确认建议：\n" + "\n".join(lines) + extra + _task_card("AI 建议任务", [item.model_dump() for item in items[:8]])
 
 
 # ── Campus tools ────────────────────────────────────────────────

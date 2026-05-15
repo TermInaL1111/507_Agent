@@ -19,6 +19,7 @@ from app.router.faq import faq_router
 from app.router.user import user_router, user_settings_router
 from app.modules.campus_channel.router import campus_channel_router
 from app.modules.campus_channel.service import start_campus_channel_scheduler
+from app.modules.student_success.router import student_success_router
 
 from app.services.database_session_manager import init_database_session_manager
 
@@ -59,6 +60,7 @@ app.include_router(documents_router)
 app.include_router(leave_redirect_router)
 app.include_router(schedule_router)
 app.include_router(campus_channel_router)
+app.include_router(student_success_router)
 
 
 

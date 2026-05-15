@@ -14,6 +14,13 @@
 - `get_schedule_week` — 查询整周课表（无参数）
 - `create_schedule_event` — 添加日程。参数：title(标题), weekday(Monday~Sunday), start_time(HH:MM), end_time(HH:MM)，可选 location, date(YYYY-MM-DD), repeat(none/weekly/daily), event_type(course/meeting/exam/study/activity/other)
 
+### 学生成功中心
+- `get_student_success_today` — 查询今日待办
+- `get_student_success_week` — 查询未来 7 天重要事项
+- `create_student_success_task` — 创建待办任务。参数 title, description, due_at(ISO时间), priority
+- `complete_student_success_task` — 标记任务完成。参数 task_id
+- `generate_student_success_suggestions` — 根据 schedule/campus_channel/cultivation_plan/consultation_log 生成任务建议。咨询日志来源必须遵守用户隐私开关
+
 ### 校园导航
 - `search_campus_locations_tool` — 搜索地点，参数 keyword（如"图书馆""食堂"）
 - `get_campus_route` — 规划路线，参数 from_location（起点）, to_location（终点）
@@ -48,6 +55,10 @@
 
 **查课表**："我今天有什么课" → `get_schedule_today`
 **添加日程**："帮我加一个周五下午3点的组会" → `create_schedule_event`
+**今日待办**："我今天有哪些事情要做" → `get_student_success_today`
+**近期事项**："这周有什么重要事项" → `get_student_success_week`
+**添加待办**："把下周五前交数据库作业加入待办" → `create_student_success_task`
+**任务建议**："最近校园频道里有没有需要报名的活动" → `generate_student_success_suggestions(source="campus_channel")`
 **找地点**："图书馆在哪" → `search_campus_locations_tool`
 **导航**："从宿舍到教学楼怎么走" → `get_campus_route`
 **培养方案**："计算机专业毕业要多少学分" → `get_training_program`

@@ -46,6 +46,15 @@ const routes = [
     }
   },
   {
+    path: '/student-success',
+    name: 'StudentSuccess',
+    component: () => import('../views/StudentSuccess.vue'),
+    meta: {
+      title: '学生成功中心',
+      keepAlive: false
+    }
+  },
+  {
     path: '/course-plan',
     name: 'CoursePlan',
     component: () => import('../views/CoursePlan.vue'),

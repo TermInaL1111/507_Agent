@@ -44,6 +44,7 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_schedule_event_columns(conn)
         await _ensure_user_settings_columns(conn)
+        await _ensure_student_success_task_columns(conn)
 
 
 async def _ensure_schedule_event_columns(conn):
@@ -60,6 +61,18 @@ async def _ensure_user_settings_columns(conn):
     if result.first() is None:
         await conn.execute(
             text("ALTER TABLE user_settings ADD COLUMN auto_timeline_from_logs_enabled BOOL NOT NULL DEFAULT 1")
+        )
+
+
+async def _ensure_student_success_task_columns(conn):
+    """Add columns that may be missing on an older student_success_tasks table."""
+    result = await conn.execute(text("SHOW TABLES LIKE 'student_success_tasks'"))
+    if result.first() is None:
+        return
+    result = await conn.execute(text("SHOW COLUMNS FROM student_success_tasks LIKE 'requires_confirmation'"))
+    if result.first() is None:
+        await conn.execute(
+            text("ALTER TABLE student_success_tasks ADD COLUMN requires_confirmation BOOL NOT NULL DEFAULT 0")
         )
 
 # 依赖项
