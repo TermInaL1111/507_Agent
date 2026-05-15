@@ -17,6 +17,7 @@ export const apiConfig = {
     logout: '/user/logout/',
     register: '/user/register/',
     profile: '/user/detail/',
+    userSettings: '/api/user/settings',
     
     // 文件上传
     uploadFile: '/file/upload/',

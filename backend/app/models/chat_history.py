@@ -71,6 +71,16 @@ class ScheduleEvent(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(64), unique=True, index=True, nullable=False)
+    auto_timeline_from_logs_enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 
 class CampusChannelPost(Base):
     __tablename__ = "campus_channel_posts"

@@ -50,25 +50,53 @@
           <el-button type="primary" @click="changeLanguage">应用语言</el-button>
         </div>
       </div>
+
+      <div class="setting-card">
+        <div class="setting-row">
+          <div>
+            <h3 class="card-title">根据咨询日志自动生成时间节点</h3>
+            <p class="card-desc">
+              开启后，系统可以根据你的咨询记录识别可能的重要时间节点，并生成日程推荐。关闭后，系统不会再根据咨询日志自动推荐或写入新的时间节点。
+            </p>
+          </div>
+          <el-switch
+            v-model="autoTimelineEnabled"
+            :loading="settingsSaving"
+            :disabled="settingsLoading"
+            size="large"
+            @change="saveAutoTimelineSetting"
+          />
+        </div>
+        <div class="setting-status" :class="{ off: !autoTimelineEnabled }">
+          {{ autoTimelineStatusText }}
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { useThemeStore } from '../store/theme'
 import { useLanguageStore } from '../store/language'
+import { useUserStore } from '../store/user'
 import { useI18n } from 'vue-i18n'
+import { apiConfig } from '../config/api'
 
 const themeStore = useThemeStore()
 const languageStore = useLanguageStore()
+const userStore = useUserStore()
 const { t, locale } = useI18n()
 
 const themeList = computed(() => themeStore.getAllThemes)
 const currentTheme = computed(() => themeStore.getCurrentTheme)
 
-onMounted(() => themeStore.initTheme())
+onMounted(() => {
+  themeStore.initTheme()
+  loadUserSettings()
+})
 
 const changeTheme = (themeId) => {
   themeStore.setTheme(themeId)
@@ -80,6 +108,54 @@ const languageOptions = [
   { label: '简体中文', value: 'zh-CN' },
   { label: 'English', value: 'en-US' },
 ]
+
+const autoTimelineEnabled = ref(true)
+const settingsLoading = ref(false)
+const settingsSaving = ref(false)
+
+const autoTimelineStatusText = computed(() => {
+  return autoTimelineEnabled.value
+    ? '已开启。系统可以根据咨询日志识别时间节点并生成日程推荐。'
+    : '已关闭。系统不会根据咨询日志自动推荐时间节点，也不会自动写入新的事项。'
+})
+
+const authHeaders = () => ({ Authorization: `Bearer ${userStore.getToken}` })
+
+const loadUserSettings = async () => {
+  if (!userStore.getLoginStatus || !userStore.getToken) return
+  settingsLoading.value = true
+  try {
+    const resp = await axios.get(apiConfig.endpoints.userSettings, {
+      headers: authHeaders(),
+    })
+    const data = resp.data?.data || resp.data || {}
+    autoTimelineEnabled.value = Boolean(data.autoGenerateTimelineEnabled)
+  } catch (error) {
+    ElMessage.error('读取设置失败，请稍后重试')
+  } finally {
+    settingsLoading.value = false
+  }
+}
+
+const saveAutoTimelineSetting = async (value) => {
+  const previous = !value
+  settingsSaving.value = true
+  try {
+    const resp = await axios.patch(
+      apiConfig.endpoints.userSettings,
+      { autoGenerateTimelineEnabled: value },
+      { headers: authHeaders() },
+    )
+    const data = resp.data?.data || resp.data || {}
+    autoTimelineEnabled.value = Boolean(data.autoGenerateTimelineEnabled)
+    ElMessage.success('设置已保存')
+  } catch (error) {
+    autoTimelineEnabled.value = previous
+    ElMessage.error('保存设置失败，已恢复原状态')
+  } finally {
+    settingsSaving.value = false
+  }
+}
 
 const changeLanguage = () => {
   languageStore.setLanguage(currentLanguage.value)
@@ -122,6 +198,34 @@ const changeLanguage = () => {
   margin: 0 0 24px;
   font-size: 14px;
   color: #9ca3af;
+}
+
+.setting-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.setting-row .card-desc {
+  max-width: 560px;
+  margin-bottom: 16px;
+  line-height: 1.7;
+}
+
+.setting-status {
+  padding: 12px 14px;
+  border-radius: 8px;
+  color: #1f6b3f;
+  background: #f0f9eb;
+  border: 1px solid #d9f7be;
+  font-size: 14px;
+}
+
+.setting-status.off {
+  color: #92400e;
+  background: #fff7ed;
+  border-color: #fed7aa;
 }
 
 /* ---- 主题 ---- */
@@ -243,6 +347,10 @@ const changeLanguage = () => {
 @media (max-width: 640px) {
   .theme-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .setting-row {
+    flex-direction: column;
   }
 }
 </style>

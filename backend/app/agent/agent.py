@@ -33,10 +33,12 @@ from app.agent.agent_tools import (
     what_time_is_now,
 )
 from app.core.logger_handler import logger
+from app.db.db_config import AsyncSessionLocal
 from app.rag.rag_service import RagService
 from app.rag.vector_store import is_training_program_query
 from app.services import session_manager as sm
 from app.services.campus_ai_service import campus_result_to_history, handle_campus_ai_message
+from app.services.user_settings_service import is_auto_timeline_enabled
 from app.utils.prompt_loader import load_prompt
 
 
@@ -189,11 +191,37 @@ async def get_agent_response(
     :return: 响应结果
     """
     try:
+        user_id = kwargs.get("user_id", "")
+        executor_kwargs = {key: value for key, value in kwargs.items() if key != "user_id"}
+        auto_timeline_enabled = True
+        if user_id:
+            try:
+                async with AsyncSessionLocal() as db:
+                    auto_timeline_enabled = await is_auto_timeline_enabled(db, user_id)
+            except Exception as settings_error:
+                auto_timeline_enabled = False
+                logger.warning(f"Agent 设置读取失败，禁用自动时间节点工具: {settings_error}")
+
+        tools = custom_tools
+        system_prompt = None
+        if not auto_timeline_enabled:
+            blocked = {"create_schedule_event", "extract_time_nodes"}
+            base_tools = custom_tools or agent_factory.default_tools
+            tools = [tool for tool in base_tools if tool.name not in blocked]
+            system_prompt = (
+                agent_factory.default_system_prompt
+                + "\n\n当前用户已关闭“根据咨询日志自动生成时间节点”。不要从对话记录中识别、推荐或写入新的时间节点。"
+            )
+
         # 1. 从工厂获取全新的 Executor 实例
-        agent_executor = agent_factory.create_agent_executor(custom_tools=custom_tools, **kwargs)
+        agent_executor = agent_factory.create_agent_executor(
+            custom_tools=tools,
+            custom_system_prompt=system_prompt,
+            **executor_kwargs,
+        )
 
         # 注入用户上下文（供工具访问）
-        set_agent_user_context(kwargs.get("user_id", ""))
+        set_agent_user_context(user_id)
 
         # 2. 构建聊天历史
         chat_history: List[BaseMessage] = []
@@ -209,7 +237,7 @@ async def get_agent_response(
         async for chunk in agent_executor.astream({
             "input": query,
             "chat_history": chat_history,
-            "system_prompt": agent_factory.default_system_prompt
+            "system_prompt": system_prompt or agent_factory.default_system_prompt
         }):
             if "output" in chunk:
                 full_response.append(chunk["output"])
@@ -329,9 +357,30 @@ async def get_agent_stream_response(
         except Exception:
             pass
 
+        auto_timeline_enabled = True
+        try:
+            async with AsyncSessionLocal() as db:
+                auto_timeline_enabled = await is_auto_timeline_enabled(db, user_id)
+        except Exception as settings_error:
+            auto_timeline_enabled = False
+            logger.warning(f"【Agent流式响应】读取自动时间节点设置失败，禁用相关工具: {settings_error}")
+
+        tools = custom_tools
+        system_prompt = user_context + agent_factory.default_system_prompt if user_context else None
+        if not auto_timeline_enabled:
+            blocked = {"create_schedule_event", "extract_time_nodes"}
+            base_tools = custom_tools or agent_factory.default_tools
+            tools = [tool for tool in base_tools if tool.name not in blocked]
+            disabled_note = (
+                "\n\n## 用户隐私设置\n"
+                "当前用户已关闭“根据咨询日志自动生成时间节点”。不要从对话记录中识别、推荐或写入新的时间节点；"
+                "如用户需要安排事项，请提示其到课表页面手动添加。\n"
+            )
+            system_prompt = (system_prompt or agent_factory.default_system_prompt) + disabled_note
+
         agent_executor = agent_factory.create_agent_executor(
-            custom_tools=custom_tools,
-            custom_system_prompt=user_context + agent_factory.default_system_prompt if user_context else None,
+            custom_tools=tools,
+            custom_system_prompt=system_prompt,
             **kwargs,
         )
 
@@ -346,7 +395,7 @@ async def get_agent_stream_response(
         async for chunk in agent_executor.astream({
             "input": query,
             "chat_history": chat_history,
-            "system_prompt": agent_factory.default_system_prompt
+            "system_prompt": system_prompt or agent_factory.default_system_prompt
         }):
             if "output" in chunk:
                 chunk_content = chunk["output"]

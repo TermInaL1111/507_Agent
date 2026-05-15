@@ -43,6 +43,7 @@ async def init_db():
         # await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_schedule_event_columns(conn)
+        await _ensure_user_settings_columns(conn)
 
 
 async def _ensure_schedule_event_columns(conn):
@@ -51,6 +52,15 @@ async def _ensure_schedule_event_columns(conn):
     if result.first() is None:
         await conn.execute(text("ALTER TABLE schedule_events ADD COLUMN date VARCHAR(16) DEFAULT ''"))
         await conn.execute(text("CREATE INDEX ix_schedule_events_date ON schedule_events (date)"))
+
+
+async def _ensure_user_settings_columns(conn):
+    """Keep existing deployments compatible when user_settings predates new flags."""
+    result = await conn.execute(text("SHOW COLUMNS FROM user_settings LIKE 'auto_timeline_from_logs_enabled'"))
+    if result.first() is None:
+        await conn.execute(
+            text("ALTER TABLE user_settings ADD COLUMN auto_timeline_from_logs_enabled BOOL NOT NULL DEFAULT 1")
+        )
 
 # 依赖项
 async def get_db():

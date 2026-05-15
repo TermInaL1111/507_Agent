@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.models import ScheduleEventCreate
 from app.services.schedule_service import create_event, find_conflicts
+from app.services.user_settings_service import is_auto_timeline_enabled
 
 
 WEEKDAY_ALIASES = {
@@ -373,6 +374,10 @@ async def handle_schedule_ai_message(
 ) -> ScheduleAIResult:
     key = _pending_key(user_id, session_id)
     pending = PENDING_SCHEDULE_ACTIONS.get(key)
+
+    if not await is_auto_timeline_enabled(db, user_id):
+        PENDING_SCHEDULE_ACTIONS.pop(key, None)
+        return ScheduleAIResult(False)
 
     if CANCEL_PATTERN.match(query.strip()) and pending:
         PENDING_SCHEDULE_ACTIONS.pop(key, None)

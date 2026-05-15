@@ -28,6 +28,7 @@ from app.services.schedule_service import (
     find_conflicts as svc_find_conflicts,
     list_week_events as svc_list_week_events,
 )
+from app.services.user_settings_service import is_auto_timeline_enabled
 from app.utils.auth_utils import decode_django_jwt
 
 _current_user_id = contextvars.ContextVar("current_user_id", default="")
@@ -243,21 +244,24 @@ async def create_schedule_event(
     if not user_id:
         return "无法获取用户身份，请重新登录。"
 
-    payload = ScheduleEventCreate(
-        title=title,
-        type=event_type,
-        date=date,
-        weekday=weekday,
-        startTime=start_time,
-        endTime=end_time,
-        location=location,
-        teacher="",
-        repeat=repeat,
-        source="ai_agent",
-        remark="由 AI Agent 添加",
-    )
-
     async with AsyncSessionLocal() as db:
+        if not await is_auto_timeline_enabled(db, user_id):
+            return "已关闭“根据咨询日志自动生成时间节点”。我不会根据当前对话自动写入新的日程；你仍可到课表页面手动添加。"
+
+        payload = ScheduleEventCreate(
+            title=title,
+            type=event_type,
+            date=date,
+            weekday=weekday,
+            startTime=start_time,
+            endTime=end_time,
+            location=location,
+            teacher="",
+            repeat=repeat,
+            source="ai_agent",
+            remark="由 AI Agent 添加",
+        )
+
         # Check for exact duplicate (same title + weekday + start_time + end_time)
         existing = await svc_list_week_events(db, user_id)
         dup = [e for e in existing
@@ -398,6 +402,13 @@ conversation_text: 最近的对话内容，从中提取有时间敏感的事项�
 返回提取到的时间节点列表，用户确认后可加入课表。
 当用户提到报名、申请、考试、活动、讲座、面试等有时间约束的事项时调用。""")
 async def extract_time_nodes(conversation_text: str) -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    async with AsyncSessionLocal() as db:
+        if not await is_auto_timeline_enabled(db, user_id):
+            return "已关闭“根据咨询日志自动生成时间节点”。我不会根据咨询日志识别或推荐新的时间节点。"
+
     if not conversation_text or len(conversation_text) < 10:
         return "对话内容过短，无法提取时间节点。"
 
