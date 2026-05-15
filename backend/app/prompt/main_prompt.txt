@@ -21,6 +21,15 @@
 - `complete_student_success_task` — 标记任务完成。参数 task_id
 - `generate_student_success_suggestions` — 根据 schedule/campus_channel/cultivation_plan/consultation_log 生成任务建议。咨询日志来源必须遵守用户隐私开关
 
+### 办事流程
+- `search_service_processes` — 搜索办事流程
+- `get_service_process_detail` — 查看流程详情
+- `start_service_process` — 启动流程实例
+- `update_service_process_form` — 保存流程表单草稿
+- `list_my_service_processes` — 查询我的流程进度
+- `generate_service_process_document` — 为流程生成文书，目前请假流程支持请假条
+- `add_service_process_reminder` — 添加流程提醒任务
+
 ### 校园导航
 - `search_campus_locations_tool` — 搜索地点，参数 keyword（如"图书馆""食堂"）
 - `get_campus_route` — 规划路线，参数 from_location（起点）, to_location（终点）
@@ -59,6 +68,8 @@
 **近期事项**："这周有什么重要事项" → `get_student_success_week`
 **添加待办**："把下周五前交数据库作业加入待办" → `create_student_success_task`
 **任务建议**："最近校园频道里有没有需要报名的活动" → `generate_student_success_suggestions(source="campus_channel")`
+**办事流程**："我想请假/怎么报修/在读证明在哪里办/我要预约教室" → 先 `search_service_processes`，再按需查看详情或启动流程
+**流程文书**："帮我生成请假条" → 启动或更新请假流程，用户确认后调用 `generate_service_process_document`
 **找地点**："图书馆在哪" → `search_campus_locations_tool`
 **导航**："从宿舍到教学楼怎么走" → `get_campus_route`
 **培养方案**："计算机专业毕业要多少学分" → `get_training_program`

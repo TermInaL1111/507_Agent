@@ -55,6 +55,15 @@ const routes = [
     }
   },
   {
+    path: '/service-processes',
+    name: 'ServiceProcesses',
+    component: () => import('../views/ServiceProcesses.vue'),
+    meta: {
+      title: '办事流程',
+      keepAlive: false
+    }
+  },
+  {
     path: '/course-plan',
     name: 'CoursePlan',
     component: () => import('../views/CoursePlan.vue'),

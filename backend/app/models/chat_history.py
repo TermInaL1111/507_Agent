@@ -109,6 +109,51 @@ class StudentSuccessTask(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class ServiceProcess(Base):
+    __tablename__ = "service_processes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    code = Column(String(64), unique=True, index=True, nullable=False)
+    category = Column(String(64), default="other", index=True)
+    description = Column(Text, default="")
+    target_user = Column(String(255), default="在校学生")
+    department = Column(String(255), default="")
+    location = Column(String(255), default="")
+    contact = Column(String(255), default="")
+    required_materials = Column(JSON, default=list)
+    steps = Column(JSON, default=list)
+    faq = Column(JSON, default=list)
+    source_type = Column(String(64), default="seed")
+    source_id = Column(String(128), default="")
+    enabled = Column(Boolean, default=True, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class UserProcessInstance(Base):
+    __tablename__ = "user_process_instances"
+    __table_args__ = (
+        Index("ix_user_process_user_status", "user_id", "status"),
+        Index("ix_user_process_process", "process_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(64), index=True, nullable=False)
+    process_id = Column(Integer, ForeignKey("service_processes.id"), nullable=False)
+    status = Column(String(32), default="draft", index=True)
+    current_step = Column(Integer, default=0)
+    collected_data = Column(JSON, default=dict)
+    generated_document_id = Column(String(128), default="")
+    related_schedule_id = Column(Integer, nullable=True)
+    related_task_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    process = relationship("ServiceProcess")
+
+
 
 class CampusChannelPost(Base):
     __tablename__ = "campus_channel_posts"

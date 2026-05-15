@@ -21,6 +21,8 @@ export const apiConfig = {
     studentSuccessOverview: '/api/student-success/overview',
     studentSuccessTasks: '/api/student-success/tasks',
     studentSuccessGenerate: '/api/student-success/generate',
+    serviceProcesses: '/api/service-processes',
+    serviceProcessInstances: '/api/service-processes/instances/',
     
     // 文件上传
     uploadFile: '/file/upload/',

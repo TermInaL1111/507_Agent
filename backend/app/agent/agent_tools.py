@@ -33,6 +33,8 @@ from app.services.user_settings_service import is_auto_timeline_enabled
 from app.utils.auth_utils import decode_django_jwt
 from app.modules.student_success.schemas import StudentTaskCreate, StudentTaskGenerateRequest, StudentTaskUpdate
 from app.modules.student_success.service import StudentSuccessService
+from app.modules.service_process.schemas import ProcessInstanceUpdate, ProcessReminderRequest
+from app.modules.service_process.service import ServiceProcessService
 
 _current_user_id = contextvars.ContextVar("current_user_id", default="")
 
@@ -385,6 +387,102 @@ async def generate_student_success_suggestions(source: str = "schedule") -> str:
     lines = [f"- {item.title}（来源：{item.source_type}，优先级：{item.priority}）" for item in items[:8]]
     extra = "\n校园频道内容仅供信息聚合与问答参考，请以学校官方通知为准。" if source == "campus_channel" else ""
     return "已生成以下待确认建议：\n" + "\n".join(lines) + extra + _task_card("AI 建议任务", [item.model_dump() for item in items[:8]])
+
+
+# ── Service process tools ───────────────────────────────────────
+
+@tool(description="搜索校园办事流程。keyword 可为请假、报修、证明、场地等；返回流程名称、材料和部门。")
+async def search_service_processes(keyword: str = "") -> str:
+    async with AsyncSessionLocal() as db:
+        rows = await ServiceProcessService(db).list_processes(keyword=keyword or None)
+    if not rows:
+        return "未找到匹配的办事流程。可尝试查询学校官方通知或联系对应部门。"
+    lines = [
+        f"- ID {item['id']}｜{item['name']}：{item['description']}；材料：{'、'.join(item.get('required_materials', [])[:3])}"
+        for item in rows[:6]
+    ]
+    return "找到以下办事流程：\n" + "\n".join(lines) + "\n政策类信息请以学校官方最新通知为准。"
+
+
+@tool(description="查看办事流程详情。process_id: 流程ID。")
+async def get_service_process_detail(process_id: int) -> str:
+    async with AsyncSessionLocal() as db:
+        service = ServiceProcessService(db)
+        process = await service.get_process(process_id)
+        data = service.process_out(process)
+    steps = "\n".join(f"{idx+1}. {step}" for idx, step in enumerate(data.get("steps", [])))
+    materials = "、".join(data.get("required_materials", []))
+    return (
+        f"{data['name']}\n适用对象：{data['target_user']}\n办理部门：{data['department']}\n"
+        f"材料：{materials}\n步骤：\n{steps}\n来源：{data['source_type']} / {data['source_id']}。请以学校官方最新通知为准。"
+    )
+
+
+@tool(description="启动一个办事流程。process_id: 流程ID。")
+async def start_service_process(process_id: int) -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    async with AsyncSessionLocal() as db:
+        instance = await ServiceProcessService(db).start_instance(user_id, process_id)
+    return f"已启动流程：{instance['process']['name']}，流程实例ID：{instance['id']}。我会按步骤帮你补全信息。"
+
+
+@tool(description="更新办事流程表单。instance_id: 流程实例ID；data: 表单数据JSON对象；current_step: 当前步骤序号。")
+async def update_service_process_form(instance_id: int, data: dict, current_step: int = 0) -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    async with AsyncSessionLocal() as db:
+        instance = await ServiceProcessService(db).update_instance(
+            user_id,
+            instance_id,
+            ProcessInstanceUpdate(status="collecting", current_step=current_step, collected_data=data or {}),
+        )
+    return f"已保存流程草稿：{instance['process']['name']}，当前第 {instance['current_step'] + 1} 步。"
+
+
+@tool(description="查询当前用户的办事流程进度。无需参数。")
+async def list_my_service_processes() -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    async with AsyncSessionLocal() as db:
+        rows = await ServiceProcessService(db).list_instances(user_id)
+    if not rows:
+        return "你当前没有进行中的办事流程。"
+    return "我的办事流程：\n" + "\n".join(
+        f"- 实例 {item['id']}｜{item['process']['name']}｜状态 {item['status']}｜第 {item['current_step'] + 1} 步"
+        for item in rows[:8]
+    )
+
+
+@tool(description="为办事流程生成相关文书。目前请假流程可生成请假条。instance_id: 流程实例ID。")
+async def generate_service_process_document(instance_id: int) -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    async with AsyncSessionLocal() as db:
+        result = await ServiceProcessService(db).generate_document(user_id, instance_id)
+    return json.dumps(result, ensure_ascii=False)
+
+
+@tool(description="给办事流程添加提醒任务。instance_id:流程实例ID；title:提醒标题；due_at: ISO时间；priority: low/medium/high/urgent。")
+async def add_service_process_reminder(instance_id: int, title: str, due_at: str, priority: str = "medium") -> str:
+    user_id = _current_user_id.get()
+    if not user_id:
+        return "无法获取用户身份，请重新登录。"
+    try:
+        due_value = datetime.datetime.fromisoformat(due_at.replace("Z", "+00:00"))
+    except Exception:
+        return "提醒时间格式不正确，请使用 ISO 时间。"
+    async with AsyncSessionLocal() as db:
+        result = await ServiceProcessService(db).add_reminder(
+            user_id,
+            instance_id,
+            ProcessReminderRequest(title=title, due_at=due_value, priority=priority),
+        )
+    return "已添加流程提醒任务：" + result["task"]["title"]
 
 
 # ── Campus tools ────────────────────────────────────────────────

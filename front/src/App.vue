@@ -30,6 +30,11 @@
           <span>学生成功中心</span>
         </el-menu-item>
 
+        <el-menu-item index="/service-processes">
+          <el-icon><Tickets /></el-icon>
+          <span>办事流程</span>
+        </el-menu-item>
+
         <el-menu-item index="/campus-map">
           <el-icon><MapLocation /></el-icon>
           <span>校园导航</span>

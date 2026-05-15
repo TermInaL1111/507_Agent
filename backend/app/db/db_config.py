@@ -45,6 +45,9 @@ async def init_db():
         await _ensure_schedule_event_columns(conn)
         await _ensure_user_settings_columns(conn)
         await _ensure_student_success_task_columns(conn)
+        await _ensure_service_process_columns(conn)
+    from app.modules.service_process.seed import seed_service_processes
+    await seed_service_processes()
 
 
 async def _ensure_schedule_event_columns(conn):
@@ -74,6 +77,16 @@ async def _ensure_student_success_task_columns(conn):
         await conn.execute(
             text("ALTER TABLE student_success_tasks ADD COLUMN requires_confirmation BOOL NOT NULL DEFAULT 0")
         )
+
+
+async def _ensure_service_process_columns(conn):
+    """Keep process tables compatible on older deployments."""
+    result = await conn.execute(text("SHOW TABLES LIKE 'user_process_instances'"))
+    if result.first() is None:
+        return
+    result = await conn.execute(text("SHOW COLUMNS FROM user_process_instances LIKE 'generated_document_id'"))
+    if result.first() is None:
+        await conn.execute(text("ALTER TABLE user_process_instances ADD COLUMN generated_document_id VARCHAR(128) DEFAULT ''"))
 
 # 依赖项
 async def get_db():
