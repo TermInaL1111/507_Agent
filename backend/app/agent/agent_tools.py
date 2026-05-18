@@ -725,6 +725,7 @@ async def faq_recommend(query: str = "") -> str:
 
 _DOCUMENTS_DIR = Path(os.getenv("DOCUMENTS_DIR", "/app/documents"))
 _DOCUMENTS_TEMP_DIR = Path(os.getenv("DOCUMENTS_TEMP_DIR", "/tmp/documents"))
+PENDING_DOCUMENT_PREVIEWS: dict[str, dict] = {}
 
 _FIELD_LABELS = {
     "name": "姓名", "student_id": "学号", "class_name": "班级",
@@ -870,8 +871,12 @@ def _resolve_relative_date(text: str) -> str:
 def _resolve_template_name(fields_config: dict, variant: str, recipient_type: str = "") -> str:
     """Pick the right template file based on variant and sub-variant."""
     variants = fields_config.get("variants", {})
+    if not variant and variants:
+        variant = next(iter(variants.keys()))
     vcfg = variants.get(variant, {})
     template = vcfg.get("template", "template.docx")
+    if not recipient_type:
+        recipient_type = vcfg.get("default_recipient_type", "")
     sub_variants = vcfg.get("sub_variants", {})
     if sub_variants and recipient_type:
         for sv_key, sv_cfg in sub_variants.items():
@@ -879,6 +884,10 @@ def _resolve_template_name(fields_config: dict, variant: str, recipient_type: st
                 template = sv_cfg.get("template", template)
                 break
     return template
+
+
+def _pending_document_key(user_id: str) -> str:
+    return user_id or "anonymous"
 
 
 async def _lookup_schedule_for_leave(user_id: str, params: dict) -> list[dict]:
@@ -941,9 +950,15 @@ async def doc_preview(
     if params is None:
         params = {}
     user_id = _current_user_id.get()
+    pending_key = _pending_document_key(user_id)
 
     # ── Phase 2: Generate ──
-    if confirmed and params:
+    if confirmed:
+        pending = dict(PENDING_DOCUMENT_PREVIEWS.get(pending_key, {}))
+        params = {**pending, **(params or {})}
+        if not params:
+            return "没有找到可确认的文书预览。请先告诉我请假类型、原因和请假时间，我会先生成预览。"
+
         doc_type = params.pop("_doc_type", None)
         variant = params.pop("_variant", None)
         recipient_type = params.pop("_recipient_type", params.get("recipient_type", ""))
@@ -959,9 +974,13 @@ async def doc_preview(
 
         required = list(fields_config.get("required", []))
 
+        if not variant and "variants" in fields_config:
+            variant = next(iter(fields_config["variants"].keys()))
         if variant and "variants" in fields_config:
             vcfg = fields_config["variants"].get(variant, {})
             required = required + vcfg.get("required", [])
+            if not recipient_type:
+                recipient_type = vcfg.get("default_recipient_type", "")
 
         missing = [f for f in required if not params.get(f)]
         if missing:
@@ -973,6 +992,7 @@ async def doc_preview(
         from app.services.document_generator import DocumentGenerator
         gen = DocumentGenerator(_DOCUMENTS_DIR, _DOCUMENTS_TEMP_DIR)
         output_path = gen.generate(doc_type, params, template_name=template_name)
+        PENDING_DOCUMENT_PREVIEWS.pop(pending_key, None)
         file_id = output_path.stem
         file_size = output_path.stat().st_size
         size_str = f"{file_size / 1024:.1f} KB" if file_size > 1024 else f"{file_size} B"
@@ -1010,6 +1030,7 @@ async def doc_preview(
     variant_label = vcfg.get("label", variant)
     required_keys = required_keys + vcfg.get("required", [])
     optional_keys = optional_keys + vcfg.get("optional", [])
+    recipient_type = params.get("_recipient_type", params.get("recipient_type", vcfg.get("default_recipient_type", "")))
 
     # ── Resolve relative dates ──
     for date_key in ["start_date", "end_date", "leave_start", "leave_end"]:
@@ -1073,6 +1094,13 @@ async def doc_preview(
     missing = [{"key": k, "label": _field_label(k), "required": True} for k in required_keys if k not in already]
 
     hint = '回复"确认"生成文档，或回复补充信息' if missing else '回复"确认"生成文档，或回复修改'
+    pending_params = {
+        **params,
+        "_doc_type": doc_type,
+        "_variant": variant,
+        "_recipient_type": recipient_type,
+    }
+    PENDING_DOCUMENT_PREVIEWS[pending_key] = pending_params
 
     return json.dumps({
         "type": "document_preview",
