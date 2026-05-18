@@ -874,16 +874,44 @@ def _resolve_template_name(fields_config: dict, variant: str, recipient_type: st
     if not variant and variants:
         variant = next(iter(variants.keys()))
     vcfg = variants.get(variant, {})
-    template = vcfg.get("template", "template.docx")
+    template = vcfg.get("template", "")
     if not recipient_type:
         recipient_type = vcfg.get("default_recipient_type", "")
     sub_variants = vcfg.get("sub_variants", {})
-    if sub_variants and recipient_type:
+    if sub_variants:
+        normalized_recipient = _normalize_recipient_type(recipient_type, sub_variants, vcfg.get("default_recipient_type", ""))
         for sv_key, sv_cfg in sub_variants.items():
-            if sv_key == recipient_type or recipient_type == sv_key:
+            if sv_key == normalized_recipient:
                 template = sv_cfg.get("template", template)
                 break
+        if not template:
+            default_key = vcfg.get("default_recipient_type", "")
+            template = sub_variants.get(default_key, {}).get("template", "")
+    if not template:
+        template = "template.docx"
     return template
+
+
+def _normalize_recipient_type(recipient_type: str, sub_variants: dict, default_recipient_type: str = "") -> str:
+    """Map conversational labels such as "辅导员" to configured template keys."""
+    value = str(recipient_type or "").strip().lower()
+    if value in sub_variants:
+        return value
+
+    aliases = {
+        "teacher": {"teacher", "任课老师", "任课教师", "老师", "授课老师", "课程老师"},
+        "student_affairs": {"student_affairs", "affairs", "学工组", "学生工作组", "辅导员", "导员", "学院", "学院备案"},
+    }
+    for key, values in aliases.items():
+        if key in sub_variants and value in {str(v).lower() for v in values}:
+            return key
+
+    for key, cfg in sub_variants.items():
+        label = str(cfg.get("label", "")).strip().lower()
+        if label and (value == label or value in label or label in value):
+            return key
+
+    return default_recipient_type if default_recipient_type in sub_variants else next(iter(sub_variants.keys()), "")
 
 
 def _pending_document_key(user_id: str) -> str:
