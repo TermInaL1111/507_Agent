@@ -870,48 +870,14 @@ def _resolve_relative_date(text: str) -> str:
 
 def _resolve_template_name(fields_config: dict, variant: str, recipient_type: str = "") -> str:
     """Pick the right template file based on variant and sub-variant."""
-    variants = fields_config.get("variants", {})
-    if not variant and variants:
-        variant = next(iter(variants.keys()))
-    vcfg = variants.get(variant, {})
-    template = vcfg.get("template", "")
-    if not recipient_type:
-        recipient_type = vcfg.get("default_recipient_type", "")
-    sub_variants = vcfg.get("sub_variants", {})
-    if sub_variants:
-        normalized_recipient = _normalize_recipient_type(recipient_type, sub_variants, vcfg.get("default_recipient_type", ""))
-        for sv_key, sv_cfg in sub_variants.items():
-            if sv_key == normalized_recipient:
-                template = sv_cfg.get("template", template)
-                break
-        if not template:
-            default_key = vcfg.get("default_recipient_type", "")
-            template = sub_variants.get(default_key, {}).get("template", "")
-    if not template:
-        template = "template.docx"
-    return template
+    from app.services.leave_document_utils import resolve_leave_template_name
+    return resolve_leave_template_name(fields_config, variant, recipient_type)
 
 
 def _normalize_recipient_type(recipient_type: str, sub_variants: dict, default_recipient_type: str = "") -> str:
     """Map conversational labels such as "辅导员" to configured template keys."""
-    value = str(recipient_type or "").strip().lower()
-    if value in sub_variants:
-        return value
-
-    aliases = {
-        "teacher": {"teacher", "任课老师", "任课教师", "老师", "授课老师", "课程老师"},
-        "student_affairs": {"student_affairs", "affairs", "学工组", "学生工作组", "辅导员", "导员", "学院", "学院备案"},
-    }
-    for key, values in aliases.items():
-        if key in sub_variants and value in {str(v).lower() for v in values}:
-            return key
-
-    for key, cfg in sub_variants.items():
-        label = str(cfg.get("label", "")).strip().lower()
-        if label and (value == label or value in label or label in value):
-            return key
-
-    return default_recipient_type if default_recipient_type in sub_variants else next(iter(sub_variants.keys()), "")
+    from app.services.leave_document_utils import normalize_recipient_type as normalize
+    return normalize(recipient_type, sub_variants, default_recipient_type)
 
 
 def _pending_document_key(user_id: str) -> str:
@@ -982,6 +948,11 @@ async def doc_preview(
 
     # ── Phase 2: Generate ──
     if confirmed:
+        from app.services.leave_document_utils import (
+            formal_leave_missing_fields,
+            format_missing_leave_fields,
+            normalize_leave_fields,
+        )
         pending = dict(PENDING_DOCUMENT_PREVIEWS.get(pending_key, {}))
         params = {**pending, **(params or {})}
         if not params:
@@ -1010,10 +981,18 @@ async def doc_preview(
             if not recipient_type:
                 recipient_type = vcfg.get("default_recipient_type", "")
 
+        if doc_type == "leave":
+            params = normalize_leave_fields(params, query)
+
         missing = [f for f in required if not params.get(f)]
         if missing:
             labels = [_field_label(f) for f in missing]
             return f"以下必填字段缺失：{'、'.join(labels)}。请补充后重新确认。"
+
+        if doc_type == "leave":
+            formal_missing = formal_leave_missing_fields(fields_config, variant, recipient_type, params)
+            if formal_missing:
+                return format_missing_leave_fields(formal_missing)
 
         template_name = _resolve_template_name(fields_config, variant, recipient_type)
 
@@ -1106,6 +1085,18 @@ async def doc_preview(
                     params[key] = val
                     schedule_filled.append({"key": key, "label": _field_label(key), "value": str(val), "source": "schedule"})
 
+    if doc_type == "leave":
+        from app.services.leave_document_utils import (
+            formal_leave_missing_fields,
+            normalize_leave_fields,
+        )
+        before_normalize = dict(params)
+        params = normalize_leave_fields(params, query)
+        for key in ["duration_days", "start_time", "end_time"]:
+            val = params.get(key, "")
+            if val and before_normalize.get(key) != val and not any(sf["key"] == key for sf in schedule_filled):
+                schedule_filled.append({"key": key, "label": _field_label(key), "value": str(val), "source": "auto"})
+
     # ── Extract from LLM-provided params ──
     extracted = []
     for key in required_keys + optional_keys:
@@ -1119,7 +1110,12 @@ async def doc_preview(
 
     # ── Missing ──
     already = {f["key"] for f in auto_filled} | {f["key"] for f in schedule_filled} | {f["key"] for f in extracted}
-    missing = [{"key": k, "label": _field_label(k), "required": True} for k in required_keys if k not in already]
+    missing_keys = [k for k in required_keys if k not in already]
+    if doc_type == "leave":
+        for k in formal_leave_missing_fields(fields_config, variant, recipient_type, params):
+            if k not in missing_keys and k not in already:
+                missing_keys.append(k)
+    missing = [{"key": k, "label": _field_label(k), "required": True} for k in missing_keys]
 
     hint = '回复"确认"生成文档，或回复补充信息' if missing else '回复"确认"生成文档，或回复修改'
     pending_params = {

@@ -8,14 +8,17 @@
       "label": "课程请假",
       "required": ["recipient_type"],
       "optional": ["teacher_name", "course_name", "start_time", "end_time"],
+      "formal_required": ["duration_days", "start_time", "end_time", "student_phone", "parent_phone"],
       "auto_detect_from_schedule": true,
       "sub_variants": {
         "teacher": {
           "label": "交给任课老师",
+          "formal_required": ["teacher_name"],
           "template": "template_course_teacher.docx"
         },
         "student_affairs": {
           "label": "学工组备案",
+          "formal_required": [],
           "template": "template_course_affairs.docx"
         }
       },

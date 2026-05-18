@@ -1,4 +1,6 @@
+import json
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, or_, select
@@ -147,8 +149,23 @@ class ServiceProcessService:
         fields = dict(instance.collected_data or {})
         from app.router.documents import get_temp_dir
         from app.services.document_generator import DocumentGenerator
+        from app.services.leave_document_utils import (
+            formal_leave_missing_fields,
+            format_missing_leave_fields,
+            normalize_leave_fields,
+            resolve_leave_template_name,
+        )
+        documents_dir = Path("/app/documents")
+        fields_config = json.loads((documents_dir / "leave" / "fields.json").read_text(encoding="utf-8"))
+        variant = fields.pop("_variant", fields.get("variant", "course_leave")) or "course_leave"
+        recipient_type = fields.pop("_recipient_type", fields.get("recipient_type", ""))
+        fields = normalize_leave_fields(fields)
+        missing = formal_leave_missing_fields(fields_config, variant, recipient_type, fields)
+        if missing:
+            raise HTTPException(status_code=400, detail=format_missing_leave_fields(missing))
+        template_name = resolve_leave_template_name(fields_config, variant, recipient_type)
         gen = DocumentGenerator("/app/documents", get_temp_dir())
-        output_path = gen.generate("leave", fields, template_name="template_course_teacher.docx")
+        output_path = gen.generate("leave", fields, template_name=template_name)
         file_id = output_path.stem
         instance.generated_document_id = file_id
         instance.status = "ready_to_submit"
