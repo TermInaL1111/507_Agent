@@ -45,5 +45,5 @@ class DocumentGenerator:
             matches = re.findall(r'\{\{(\w+)\}\}', run.text)
             for key in matches:
                 value = fields.get(key, "") if fields else ""
-                display_value = value if value else "________"
+                display_value = str(value) if value else "________"
                 run.text = run.text.replace(f"{{{{{key}}}}}", display_value)

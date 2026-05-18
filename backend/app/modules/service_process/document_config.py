@@ -58,7 +58,7 @@ PROCESS_DOCUMENTS: dict[str, ProcessDocumentConfig] = {
         aliases={
             "name": ("student_name", "applicant_name", "姓名", "申请人"),
             "student_id": ("学号",),
-            "class_name": ("班级", "班号"),
+            "class_name": ("class", "_class", "班级", "班号"),
             "contact_phone": ("phone", "student_phone", "联系电话", "联系方式", "手机", "电话"),
             "location": ("repair_location", "address", "报修地点", "地点", "宿舍位置"),
             "facility_type": ("repair_type", "device_type", "设施类型", "设备类型", "报修类型"),
@@ -85,12 +85,12 @@ PROCESS_DOCUMENTS: dict[str, ProcessDocumentConfig] = {
         aliases={
             "name": ("student_name", "applicant_name", "姓名", "申请人"),
             "student_id": ("学号",),
-            "class_name": ("班级", "班号"),
+            "class_name": ("class", "_class", "班级", "班号"),
             "contact_phone": ("phone", "student_phone", "联系电话", "联系方式", "手机", "电话"),
             "certificate_type": ("type", "proof_type", "证明类型", "申请类型"),
             "purpose": ("usage", "reason", "证明用途", "用途", "申请用途"),
             "copies": ("count", "copy_count", "申请份数", "份数", "数量"),
-            "receiving_org": ("接收单位", "接收单位或用途说明", "提交单位"),
+            "receiving_org": ("receiving_unit", "receiving_department", "接收单位", "接收单位或用途说明", "提交单位"),
             "delivery_method": ("领取方式", "获取方式"),
         },
         defaults={"receiving_org": "请按实际用途填写或在提交前补充", "delivery_method": "请以学校官方系统或教务部门要求为准"},
@@ -116,7 +116,7 @@ PROCESS_DOCUMENTS: dict[str, ProcessDocumentConfig] = {
             "name": ("student_name", "applicant_name", "responsible_person", "负责人", "负责人姓名", "姓名"),
             "student_id": ("学号",),
             "contact_phone": ("phone", "student_phone", "联系电话", "联系方式", "手机", "电话"),
-            "organization": ("class_name", "club", "department", "所属组织", "所属组织或班级", "班级", "社团"),
+            "organization": ("class", "_class", "class_name", "club", "department", "所属组织", "所属组织或班级", "班级", "社团"),
             "venue_name": ("venue", "place", "classroom", "预约场地", "场地", "教室"),
             "activity_name": ("活动名称", "活动", "会议名称"),
             "usage_purpose": ("purpose", "reason", "场地用途", "用途", "预约用途"),
@@ -137,9 +137,8 @@ def get_process_document_config(process_code: str) -> ProcessDocumentConfig | No
 
 
 def normalize_process_document_fields(config: ProcessDocumentConfig, data: dict[str, Any]) -> dict[str, Any]:
-    fields = dict(config.defaults)
     raw = dict(data or {})
-    fields.update(raw)
+    fields = dict(raw)
     for target, aliases in config.aliases.items():
         if fields.get(target):
             continue
@@ -147,6 +146,9 @@ def normalize_process_document_fields(config: ProcessDocumentConfig, data: dict[
             if raw.get(alias):
                 fields[target] = raw[alias]
                 break
+    for key, value in config.defaults.items():
+        if not fields.get(key):
+            fields[key] = value
     return fields
 
 
