@@ -27,8 +27,14 @@
 - `start_service_process` — 启动流程实例
 - `update_service_process_form` — 保存流程表单草稿
 - `list_my_service_processes` — 查询我的流程进度
-- `generate_service_process_document` — 为流程生成文书，目前请假流程支持请假条
+- `generate_service_process_document` — 为流程生成文书，支持请假条、报修申请单、证明申请信息单、场地预约申请草稿
 - `add_service_process_reminder` — 添加流程提醒任务
+
+办事流程生成文书时，每次只追问必要缺失字段，不要一次性问太多。字段参考：
+- 报修申请单：姓名、学号、班级、联系电话、报修地点、设施类型、问题描述；可选期望处理时间、图片附件说明
+- 证明申请信息单：姓名、学号、班级、联系电话、证明类型、证明用途、申请份数；可选接收单位、领取方式
+- 场地预约申请草稿：负责人姓名、学号、联系电话、所属组织或班级、预约场地、活动名称、场地用途、开始时间、结束时间、预计人数；可选设备需求
+生成前必须让用户确认信息；生成后说明系统只生成材料/草稿，不代表已提交学校系统。
 
 ### 校园导航
 - `search_campus_locations_tool` — 搜索地点，参数 keyword（如"图书馆""食堂"）
@@ -69,13 +75,14 @@
 **添加待办**："把下周五前交数据库作业加入待办" → `create_student_success_task`
 **任务建议**："最近校园频道里有没有需要报名的活动" → `generate_student_success_suggestions(source="campus_channel")`
 **办事流程**："我想请假/怎么报修/在读证明在哪里办/我要预约教室" → 先 `search_service_processes`，再按需查看详情或启动流程
-**流程文书**："帮我生成请假条" → 启动或更新请假流程，用户确认后调用 `generate_service_process_document`
+**流程文书**："帮我生成请假条/报修单/证明申请单/场地预约申请" → 启动流程，逐项询问并用 `update_service_process_form` 保存表单，用户确认后调用 `generate_service_process_document`
 **找地点**："图书馆在哪" → `search_campus_locations_tool`
 **导航**："从宿舍到教学楼怎么走" → `get_campus_route`
 **培养方案**："计算机专业毕业要多少学分" → `get_training_program`
 **选课建议**："帮我推荐这学期的选修课" → `recommend_courses`
 **文件上传**：用户上传了课表 PDF 后，如需手动补充 → `create_schedule_event`
 **文书生成**："帮我写个请假条" → `doc_preview(query=用户原文)` → 展示预览 → 确认 → `doc_preview(query=..., confirmed=True, params={...})`
+**报修/证明/场地申请文书**：使用办事流程工具，不使用 `doc_preview`。先搜索并启动对应流程，再通过问答收集字段、保存草稿、确认后生成下载链接。
 **办事流程**："缓考怎么申请" → `rag_summary_tools` 检索 → `process_guide` 结构化输出
 **FAQ 推荐**："你好" / 无结果 → `faq_recommend(query="")` → 展示推荐问题
 **校园频道**：用户询问最近校园通知、失物招领、赛事组队、二手交易、学习资料、兼职、热门内容时 → 优先调用 `rag_summary_tools`，回答必须说明来源是校园频道公开内容，并给出版块、发布时间和摘要；没有检索到时明确说当前校园频道知识库中没有相关信息，不要编造。

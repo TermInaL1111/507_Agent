@@ -457,7 +457,7 @@ async def list_my_service_processes() -> str:
     )
 
 
-@tool(description="为办事流程生成相关文书。目前请假流程可生成请假条。instance_id: 流程实例ID。")
+@tool(description="为办事流程生成相关文书。支持请假条、报修申请单、证明申请信息单、场地预约申请草稿。instance_id: 流程实例ID。生成前必须已通过 update_service_process_form 保存必要字段。")
 async def generate_service_process_document(instance_id: int) -> str:
     user_id = _current_user_id.get()
     if not user_id:

@@ -1,0 +1,6 @@
+{
+  "display_name": "场地预约申请草稿",
+  "required": ["name", "student_id", "contact_phone", "organization", "venue_name", "activity_name", "usage_purpose", "start_datetime", "end_datetime", "attendees"],
+  "optional": ["equipment", "notes", "sign_date"],
+  "template": "template.docx"
+}

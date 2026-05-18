@@ -24,13 +24,13 @@ SEED_PROCESSES = [
         "code": "repair_request",
         "name": "宿舍 / 校园设施报修",
         "category": "repair",
-        "description": "收集报修地点、设施类型和问题描述，生成报修办理清单。",
+        "description": "收集报修地点、设施类型、问题描述和联系方式，生成可下载的报修申请单。",
         "target_user": "遇到宿舍或校园公共设施故障的学生",
         "department": "后勤或物业服务部门",
         "location": "请以学校后勤平台或宿管通知为准",
         "contact": "请以学校后勤平台公布信息为准",
-        "required_materials": ["报修地点", "设施类型", "问题描述", "图片附件（可选）", "联系方式（可选）"],
-        "steps": ["填写报修地点", "选择设施类型", "描述问题", "补充图片或联系方式", "按学校后勤平台要求提交"],
+        "required_materials": ["姓名/学号/班级", "联系电话", "报修地点", "设施类型", "问题描述", "图片附件（可选）"],
+        "steps": ["填写个人信息", "填写报修地点", "选择设施类型", "描述问题", "确认信息并生成报修申请单", "按学校后勤平台要求提交"],
         "faq": [{"q": "能直接提交后勤系统吗？", "a": "当前没有真实对接接口，只生成指引和待办提醒。"}],
         "source_type": "seed",
         "source_id": "repair-v1",
@@ -39,13 +39,13 @@ SEED_PROCESSES = [
         "code": "certificate_application",
         "name": "在读证明 / 成绩证明申请",
         "category": "certificate",
-        "description": "整理证明办理条件、材料清单和办理路径，必要时检索知识库来源。",
+        "description": "整理证明类型、用途、份数和联系方式，生成可下载的证明申请信息单。",
         "target_user": "需要办理在读证明或成绩证明的学生",
         "department": "教务部门或学院教务办",
         "location": "知识库无可靠来源时，请以学校官方系统或学院通知为准",
         "contact": "请以学校官方通知为准",
-        "required_materials": ["本人身份信息", "证明用途", "申请类型", "学校要求的其他材料"],
-        "steps": ["确认申请类型", "核对用途和份数", "查询官方办理入口或地点", "准备材料", "按官方要求提交"],
+        "required_materials": ["姓名/学号/班级", "联系电话", "证明类型", "证明用途", "申请份数", "学校要求的其他材料"],
+        "steps": ["确认申请类型", "核对用途和份数", "补充联系方式", "生成证明申请信息单", "按官方要求提交"],
         "faq": [{"q": "没有查到地点怎么办？", "a": "不要猜测地点，请联系学院教务办或查看学校官方通知。"}],
         "source_type": "seed",
         "source_id": "certificate-v1",
@@ -54,13 +54,13 @@ SEED_PROCESSES = [
         "code": "venue_booking",
         "name": "场地预约指引",
         "category": "venue",
-        "description": "引导填写用途、时间、人数和设备需求，生成预约申请草稿并提醒检查课表冲突。",
+        "description": "引导填写用途、时间、人数、设备需求和负责人信息，生成可下载的场地预约申请草稿。",
         "target_user": "需要预约教室、会议室或活动场地的学生",
         "department": "场地主管部门/学院/教务或团委",
         "location": "请以学校官方预约系统或场地管理部门通知为准",
         "contact": "请以官方系统公布信息为准",
-        "required_materials": ["预约用途", "预约时间", "预计人数", "设备需求", "负责人信息"],
-        "steps": ["填写场地用途", "填写预约时间", "填写人数和设备需求", "检查个人日程冲突", "生成申请草稿", "按官方渠道提交"],
+        "required_materials": ["负责人姓名/学号", "联系电话", "所属组织或班级", "预约场地", "活动名称", "预约用途", "预约时间", "预计人数", "设备需求"],
+        "steps": ["填写负责人信息", "填写场地用途", "填写预约时间", "填写人数和设备需求", "检查个人日程冲突", "确认信息并生成申请草稿", "按官方渠道提交"],
         "faq": [{"q": "系统会显示预约成功吗？", "a": "不会。当前只能生成申请草稿或提醒，不能替代官方预约系统。"}],
         "source_type": "seed",
         "source_id": "venue-v1",
@@ -74,6 +74,10 @@ async def seed_service_processes() -> None:
             result = await db.execute(select(ServiceProcess).where(ServiceProcess.code == item["code"]))
             existing = result.scalar_one_or_none()
             if existing:
+                for key, value in item.items():
+                    if key != "code":
+                        setattr(existing, key, value)
+                existing.enabled = True
                 continue
             db.add(ServiceProcess(**item, enabled=True))
         await db.commit()

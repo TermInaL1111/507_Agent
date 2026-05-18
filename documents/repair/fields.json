@@ -1,0 +1,6 @@
+{
+  "display_name": "报修申请单",
+  "required": ["name", "student_id", "class_name", "contact_phone", "location", "facility_type", "problem_description"],
+  "optional": ["preferred_time", "attachment_note", "sign_date"],
+  "template": "template.docx"
+}

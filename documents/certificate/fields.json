@@ -1,0 +1,6 @@
+{
+  "display_name": "证明申请信息单",
+  "required": ["name", "student_id", "class_name", "contact_phone", "certificate_type", "purpose", "copies"],
+  "optional": ["receiving_org", "delivery_method", "sign_date"],
+  "template": "template.docx"
+}

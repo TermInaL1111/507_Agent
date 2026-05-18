@@ -144,8 +144,37 @@ class ServiceProcessService:
 
     async def generate_document(self, user_id: str, instance_id: int) -> dict:
         instance = await self.get_instance(user_id, instance_id)
-        if instance.process.code != "leave_application":
-            raise HTTPException(status_code=400, detail="当前流程暂不支持在线生成文书")
+        process_code = instance.process.code
+        if process_code != "leave_application":
+            from app.modules.service_process.document_config import (
+                format_process_missing_fields,
+                get_process_document_config,
+                missing_process_document_fields,
+                normalize_process_document_fields,
+            )
+            config = get_process_document_config(process_code)
+            if not config:
+                raise HTTPException(status_code=400, detail="当前流程暂不支持在线生成文书")
+            fields = normalize_process_document_fields(config, dict(instance.collected_data or {}))
+            missing = missing_process_document_fields(config, fields)
+            if missing:
+                raise HTTPException(status_code=400, detail=format_process_missing_fields(config, missing))
+            from app.router.documents import get_temp_dir
+            from app.services.document_generator import DocumentGenerator
+            gen = DocumentGenerator("/app/documents", get_temp_dir())
+            output_path = gen.generate(config.doc_type, fields, template_name=config.template_name)
+            file_id = output_path.stem
+            instance.generated_document_id = file_id
+            instance.status = "ready_to_submit"
+            await self.db.commit()
+            logger.info("【办事流程】流程生成文书，用户ID: %s，process=%s，instance=%s", user_id, process_code, instance.id)
+            return {
+                "type": "document_result",
+                "file_id": file_id,
+                "file_name": f"{file_id}.docx",
+                "download_url": f"/api/documents/download/{file_id}",
+                "message": config.message,
+            }
         fields = dict(instance.collected_data or {})
         from app.router.documents import get_temp_dir
         from app.services.document_generator import DocumentGenerator
