@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 from langchain_core.tools import tool
+from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 
 from app.core.logger_handler import logger
@@ -463,7 +464,10 @@ async def generate_service_process_document(instance_id: int) -> str:
     if not user_id:
         return "无法获取用户身份，请重新登录。"
     async with AsyncSessionLocal() as db:
-        result = await ServiceProcessService(db).generate_document(user_id, instance_id)
+        try:
+            result = await ServiceProcessService(db).generate_document(user_id, instance_id)
+        except HTTPException as exc:
+            return str(exc.detail or "流程信息不完整，请补充后再生成文书。")
     return json.dumps(result, ensure_ascii=False)
 
 
