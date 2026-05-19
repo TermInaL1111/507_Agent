@@ -40,7 +40,7 @@ Vibecoding 让编码速度提升了 10x，但如果没有 Scrum 的"Definition o
 
 ---
 
-## 二、Scrum 在 Solo 项目中的取舍
+## 二、Scrum 在三人团队中的实践
 
 ### 保留的（核心价值）
 
@@ -52,21 +52,21 @@ Vibecoding 让编码速度提升了 10x，但如果没有 Scrum 的"Definition o
 | Retrospective | 发现问题→下轮改进的闭环 |
 | 任务拆分 | 大需求拆成半天能完成的小任务 |
 
-### 简化的（Solo 场景没必要）
+### 简化的
 
 | 简化项 | 原因 | 替代方案 |
 |--------|------|----------|
-| Daily Standup 15min | Solo 不需要对自己口头汇报 | TAPD 任务状态更新 + Git commit log |
-| Story Points 估算 | Solo 估算没有对比基准 | 按"半天/1天/2天"估工期 |
-| Sprint Demo 会议 | 没有观众 | 自己验收 + 导师 Review |
+| Story Points 估算 | 学生团队估算精度有限 | 按"半天/1天/2天"估工期 |
+| Sprint Demo 会议 | 无外部客户 | 组内验收 + 导师 Review |
 
-### 放弃的（诚实说明）
+### 挑战与应对
 
-| 放弃项 | 原因 |
-|--------|------|
-| Pair Programming | Solo 项目；AI 辅助编程作为替代 |
-| 集体代码所有权 | 一人项目 |
-| Stakeholder 定期反馈 | 无外部客户 |
+| 挑战 | 应对 |
+|------|------|
+| 三人团队经验差异 | A (组长) 兼任 PO+SM，统一决策方向 |
+| AI 辅助编程的代码一致性 | CLAUDE.md 约束 AI 行为 + PR Code Review |
+| CI/CD 工具链学习成本 | C 专门负责，A/B 辅助，一次配置全组复用 |
+| 课表解析等边界 case | TAPD 缺陷追踪 + Sprint Retro 集中复盘 |
 
 ---
 
@@ -90,7 +90,7 @@ Vibecoding 让编码速度提升了 10x，但如果没有 Scrum 的"Definition o
 3. **Sprint Review 强迫交付** — 每轮必须有东西能演示，不能只"写了一堆代码"
 4. **Retro 是唯一的学习机制** — 没有回顾就没有改进
 5. **AI + Scrum = 超能力** — AI 加速执行，Scrum 保证方向
-6. **Solo 不是放弃 Scrum 的理由** — 核心实践（Sprint/Backlog/Review/Retro）依然有效
+6. **小团队不是放弃 Scrum 的理由** — 核心实践（Sprint/Backlog/Review/Retro）依然有效，角色合并（PO+SM一人）降低沟通成本
 
 ---
 

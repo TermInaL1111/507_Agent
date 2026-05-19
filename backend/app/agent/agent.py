@@ -192,6 +192,23 @@ class AgentFactory:
 agent_factory = AgentFactory()
 
 
+def _build_chat_history(history: Optional[List[tuple]] = None, summary: str = "") -> List[BaseMessage]:
+    """Build LangChain chat history from a stored summary plus recent raw turns."""
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+    chat_history: List[BaseMessage] = []
+    if summary:
+        chat_history.append(SystemMessage(content=(
+            "以下是更早对话的压缩摘要，仅用于保持连续性；"
+            "如果摘要与用户当前输入冲突，以当前输入为准。\n"
+            f"{summary}"
+        )))
+    for user_msg, assistant_msg in history or []:
+        chat_history.append(HumanMessage(content=user_msg))
+        chat_history.append(AIMessage(content=assistant_msg))
+    return chat_history
+
+
 def get_agent_executor():
     """
     获取AgentExecutor实例，用于LangGraph
@@ -248,12 +265,7 @@ async def get_agent_response(
         set_agent_user_context(user_id)
 
         # 2. 构建聊天历史
-        chat_history: List[BaseMessage] = []
-        if history:
-            from langchain_core.messages import HumanMessage, AIMessage
-            for user_msg, assistant_msg in history:
-                chat_history.append(HumanMessage(content=user_msg))
-                chat_history.append(AIMessage(content=assistant_msg))
+        chat_history = _build_chat_history(history)
 
         # 3. 流式执行
         full_response = []
@@ -327,17 +339,18 @@ async def get_agent_stream_response(
 
         set_agent_user_context(user_id)
 
-        # 获取会话历史
-        history = await sm.session_manager.get_history(session_id, user_id)
-        logger.info(f"【Agent流式响应】获取会话历史成功，历史记录数: {len(history)}")
+        # 获取压缩后的模型上下文：旧对话摘要 + 最近若干轮原文
+        context = await sm.session_manager.get_agent_context(session_id, user_id)
+        history = context.get("history", [])
+        context_summary = context.get("summary", "")
+        logger.info(
+            "【Agent流式响应】获取会话上下文成功，最近历史轮数: %s，摘要长度: %s",
+            len(history),
+            len(context_summary),
+        )
 
         # 构建聊天历史
-        chat_history: List[BaseMessage] = []
-        if history:
-            from langchain_core.messages import HumanMessage, AIMessage
-            for user_msg, assistant_msg in history:
-                chat_history.append(HumanMessage(content=user_msg))
-                chat_history.append(AIMessage(content=assistant_msg))
+        chat_history = _build_chat_history(history, context_summary)
 
         # 从工厂获取全新的 Executor 实例
         # (schedule queries now flow through Agent for LLM-driven conflict detection)

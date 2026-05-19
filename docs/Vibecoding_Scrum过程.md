@@ -15,11 +15,12 @@ Vibecoding:   用户口述需求 → AI编码实现 → 用户验收 → AI修�
 
 | Scrum 角色 | 谁承担 | 干什么 |
 |------------|--------|--------|
-| Product Owner | 你 | 口述需求、设定优先级、验收功能 |
-| Scrum Master | 你 | 跟踪进度、TAPD 看板、判断是否"Done" |
-| Developer | Claude (AI) | 编码实现、写测试、修 Bug、写文档 |
+| Product Owner | A (组长) | 口述需求、设定优先级、验收功能 |
+| Scrum Master | A (组长) | 跟踪进度、TAPD 看板、主持站会 |
+| Developer (后端AI) | B | Agent工具、RAG、LangChain |
+| Developer (前端+部署) | C | Vue3前端、Docker、CI/CD、测试 |
 
-> AI 在这里不是"替代开发者"，而是"把 PO 的想法以 10x 速度变成代码"。
+> 三人团队 + AI 辅助编程（Claude 作为编码加速器）。AI 把每个人的想法以 10x 速度变成代码。
 
 ---
 
