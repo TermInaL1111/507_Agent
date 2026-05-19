@@ -558,6 +558,7 @@ class QQChannelScraper:
         since_days: int | None,
     ) -> list[CampusChannelPostCreate]:
         now = datetime.now()
+        since_time = now - timedelta(days=since_days) if since_days else None
         result = []
         for post in posts:
             if section and section != "全部" and section not in (post.section_name or ""):
@@ -566,8 +567,9 @@ class QQChannelScraper:
                 haystack = f"{post.title}\n{post.content}\n{post.summary}\n{post.author_name}"
                 if keyword.lower() not in haystack.lower():
                     continue
-            if since_days and post.publish_time:
-                if post.publish_time < now - timedelta(days=since_days):
+            if since_time and post.publish_time:
+                publish_time = self._normalize_datetime(post.publish_time)
+                if publish_time and publish_time < since_time:
                     continue
             result.append(post)
         return result
@@ -676,7 +678,7 @@ class QQChannelScraper:
         now = datetime.now()
         if re.match(r"^\d{4}-\d{2}-\d{2}T", value):
             try:
-                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                return QQChannelScraper._normalize_datetime(datetime.fromisoformat(value.replace("Z", "+00:00")))
             except ValueError:
                 pass
         match = re.search(r"(\d+)\s*分钟前", value)
@@ -701,6 +703,15 @@ class QQChannelScraper:
             except ValueError:
                 continue
         return None
+
+    @staticmethod
+    def _normalize_datetime(value: datetime | None) -> datetime | None:
+        """Use timezone-naive local datetimes for DB storage and comparisons."""
+        if not value:
+            return None
+        if value.tzinfo is not None:
+            return value.astimezone().replace(tzinfo=None)
+        return value
 
     @staticmethod
     def _json_safe(value: Any) -> Any:

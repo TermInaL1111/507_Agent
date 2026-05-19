@@ -9,7 +9,7 @@ from langsmith import traceable
 
 from app.core.logger_handler import logger
 from app.rag.reorder_service import reorder_service
-from app.rag.vector_store import VectorStoreService
+from app.rag.vector_store import VectorStoreService, extract_training_program_terms, is_training_program_query
 from app.services.source_file_service import find_source_file_by_name, get_source_file
 from app.utils.config import chroma_config
 from app.utils.factory import chat_model
@@ -65,6 +65,25 @@ class RagService:
             return [doc.get("document", "") for doc in result["documents"]]
         logger.warning(f"[RAG] reorder failed: {result['error']}")
         return documents
+
+    @staticmethod
+    def _prioritize_training_documents(query: str, documents: list) -> list[str]:
+        terms = extract_training_program_terms(query)
+        scored = []
+        for index, doc in enumerate(documents):
+            metadata = getattr(doc, "metadata", {}) or {}
+            text = getattr(doc, "page_content", "") or ""
+            score = 100 - index
+            if metadata.get("source") == "training_program":
+                score += 30
+            for term in terms:
+                if term in text:
+                    score += 12
+                if term in str(metadata.get("major", "")) or term in str(metadata.get("college", "")):
+                    score += 4
+            scored.append((score, index, text))
+        scored.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+        return [text for _, _, text in scored]
 
     @staticmethod
     def _source_filename_score(filename: str) -> int:
@@ -215,12 +234,16 @@ class RagService:
             documents = await self.retrieve_document(query)
             sources = await self.build_sources(documents, query=query)
             document_contents = [doc.page_content for doc in documents]
-            reordered_documents = await self.reorder_documents(query, document_contents)
+            training_query = is_training_program_query(query)
+            if training_query:
+                reordered_documents = self._prioritize_training_documents(query, documents)
+            else:
+                reordered_documents = await self.reorder_documents(query, document_contents)
 
             if not reordered_documents:
                 return {"documents": [], "summary": "未找到相关信息。", "sources": []}
 
-            max_documents = 3
+            max_documents = 6 if training_query else 3
 
             async def summarize_document(i, doc):
                 single_context = f"[Reference {i}] {doc}\n"

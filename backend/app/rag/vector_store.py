@@ -35,6 +35,12 @@ TRAINING_PROGRAM_KEYWORDS = (
     "第几条", "第几章", "中国地质大学", "地大", "CUG"
 )
 
+TRAINING_PROGRAM_QUERY_TERMS = (
+    "课程设置", "学位公共课", "公共学位课", "学位课", "必修课", "选修课",
+    "实践环节", "专业实践", "补修本科课程", "培养环节", "学分", "开课学期",
+    "毕业要求", "培养目标", "修业年限", "课程名称", "课程编号"
+)
+
 
 def detect_article_query(query: str) -> str | None:
     match = ARTICLE_PATTERN.search(query or "")
@@ -47,6 +53,19 @@ def is_training_program_query(query: str) -> bool:
 
 def is_campus_channel_query(query: str) -> bool:
     return any(keyword.lower() in (query or "").lower() for keyword in CAMPUS_CHANNEL_KEYWORDS)
+
+
+def extract_training_program_terms(query: str) -> list[str]:
+    """Extract compact Chinese terms that matter for curriculum-plan retrieval."""
+    query = query or ""
+    terms = [
+        term for term in re.split(r"[\s，。；：、,.!?！？（）()《》【】]+", query)
+        if len(term) >= 2 and term not in {"是什么", "什么", "第几条", "内容", "要求"}
+    ]
+    for term in TRAINING_PROGRAM_QUERY_TERMS:
+        if term in query and term not in terms:
+            terms.append(term)
+    return terms
 
 
 class VectorStoreService:
@@ -118,9 +137,15 @@ class VectorStoreService:
 
         for doc, distance in vector_results:
             metadata = doc.metadata or {}
+            text = doc.page_content or ""
             score = -float(distance or 0)
             if prefer_training_program and metadata.get("source") == "training_program":
                 score += 8.0
+                for term in extract_training_program_terms(query):
+                    if term in text:
+                        score += 3.0
+                    if term in str(metadata.get("major", "")) or term in str(metadata.get("college", "")):
+                        score += 1.5
             if prefer_campus_channel and metadata.get("source_type") == "campus_channel":
                 score += 10.0
             if metadata.get("major") and metadata.get("major") in major_candidates:
@@ -134,7 +159,7 @@ class VectorStoreService:
         if article or prefer_training_program or prefer_campus_channel:
             all_docs = await self._get_all_documents(kb_type)
             query_for_terms = (query or "").replace(article, "") if article else (query or "")
-            query_terms = [
+            query_terms = extract_training_program_terms(query_for_terms) if prefer_training_program else [
                 term for term in re.split(r"[\s，。；：、,.!?！？（）()《》【】]+", query_for_terms)
                 if len(term) >= 2 and term not in {"是什么", "什么", "第几条", "内容"}
             ]
@@ -155,7 +180,7 @@ class VectorStoreService:
                     keyword_score += 5.0
                 for term in query_terms:
                     if term in text or term in str(metadata.get("major", "")) or term in str(metadata.get("college", "")):
-                        keyword_score += min(len(term) / 10, 1.5)
+                        keyword_score += 4.0 if prefer_training_program else min(len(term) / 10, 1.5)
                 keyword_candidates.append((doc, keyword_score))
 
             keyword_candidates.sort(key=lambda item: item[1], reverse=True)

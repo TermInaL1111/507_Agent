@@ -109,9 +109,9 @@ const keyword = ref('');
 const activeType = ref('all');
 const activeCampus = ref('all');
 const campusCenters = {
-  nanwangshan: { lng: 114.3955, lat: 30.5173, zoom: 16 },
-  future_city: { lng: 114.6140, lat: 30.4580, zoom: 16 },
-  all: { lng: 114.5050, lat: 30.4880, zoom: 12 },
+  nanwangshan: { lng: 114.4000, lat: 30.5230, zoom: 15 },
+  future_city: { lng: 114.6183, lat: 30.4577, zoom: 15 },
+  all: { lng: 114.5100, lat: 30.4890, zoom: 12 },
 };
 const campusOptions = computed(() => [
   ...campusList.map(c => ({ label: c.label, value: c.key }))
@@ -211,16 +211,20 @@ const openInfoWindow = (location) => {
   });
 };
 
+const focusLocationOnMap = (location, zoom = 18) => {
+  if (!map || !isRenderableLocation(location)) return;
+  map.setZoomAndCenter(zoom, [location.longitude, location.latitude], true);
+  openInfoWindow(location);
+};
+
 const selectLocation = (location) => {
   selectedLocation.value = location;
-  if (!map || !isRenderableLocation(location)) return;
-  map.setZoomAndCenter(17, [location.longitude, location.latitude]);
-  openInfoWindow(location);
+  focusLocationOnMap(location, 18);
 };
 
 const focusSelected = () => {
   if (selectedLocation.value) {
-    selectLocation(selectedLocation.value);
+    focusLocationOnMap(selectedLocation.value, 18);
   }
 };
 
@@ -254,7 +258,50 @@ const drawRoute = (route) => {
     showDir: true
   });
   map.add(routeLine);
-  map.setFitView([routeLine, ...markers], false, [90, 90, 90, 90]);
+  // Only fit the route itself. Including every campus marker makes the map zoom out too far.
+  map.setFitView([routeLine], false, [80, 80, 220, 80], 18);
+};
+
+const isSecureLocationContext = () => {
+  return window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+};
+
+const requestBrowserLocation = () => {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('当前浏览器不支持定位，请手动选择路线起点。'));
+      return;
+    }
+
+    if (!isSecureLocationContext()) {
+      reject(new Error('浏览器定位需要 HTTPS 安全访问。请手动选择路线起点，或改用 HTTPS 域名后再使用当前位置。'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = {
+          longitude: position.coords.longitude,
+          latitude: position.coords.latitude
+        };
+        userPosition.value = coords;
+        resolve(coords);
+      },
+      (error) => {
+        const messages = {
+          1: '定位权限被拒绝，请在浏览器地址栏允许定位，或手动选择路线起点。',
+          2: '暂时无法获取当前位置，请手动选择路线起点。',
+          3: '定位超时，请重试或手动选择路线起点。'
+        };
+        reject(new Error(messages[error.code] || '获取当前位置失败，请手动选择路线起点。'));
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000
+      }
+    );
+  });
 };
 
 const planRoute = async (location) => {
@@ -273,7 +320,10 @@ const planRoute = async (location) => {
       params.origin = `${userPosition.value.longitude},${userPosition.value.latitude}`;
       params.originName = '当前位置';
     } else {
-      throw new Error('请先选择起点，或允许浏览器定位后再规划站内路线。');
+      ElMessage.info('正在请求当前位置授权...');
+      const position = await requestBrowserLocation();
+      params.origin = `${position.longitude},${position.latitude}`;
+      params.originName = '当前位置';
     }
 
     const route = await fetchWalkingRoute(params);

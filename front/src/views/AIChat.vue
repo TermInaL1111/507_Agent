@@ -457,6 +457,64 @@ const route = useRoute();
 const userStore = useUserStore();
 const sessionStore = useSessionStore();
 
+const getRecentSessionKey = () => {
+  const userId = userStore.userInfo?.uuid || userStore.userInfo?.id || userStore.userInfo?.user_id || 'anonymous';
+  return `ai-chat:recent-session:${userId}`;
+};
+
+const rememberRecentSession = (id) => {
+  if (!id || typeof window === 'undefined') return;
+  sessionStorage.setItem(getRecentSessionKey(), id);
+};
+
+const forgetRecentSession = () => {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem(getRecentSessionKey());
+};
+
+const getRecentSession = () => {
+  if (typeof window === 'undefined') return '';
+  return sessionStorage.getItem(getRecentSessionKey()) || '';
+};
+
+const resetToWelcome = () => {
+  messages.value = [{ role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', sources: [], resultCard: null }];
+  sessionId.value = '';
+  userInput.value = '';
+  smartFollowups.value = [];
+};
+
+const openSessionById = async (targetSessionId, { updateRoute = false } = {}) => {
+  if (!targetSessionId || targetSessionId === sessionId.value) return;
+
+  try {
+    const result = await sessionStore.getSession(targetSessionId);
+    if (result.success && sessionStore.currentSession) {
+      loadSessionHistory(sessionStore.currentSession);
+      rememberRecentSession(targetSessionId);
+      if (updateRoute && route.params.sessionId !== targetSessionId) {
+        router.replace(`/aichat/${targetSessionId}`);
+      }
+    } else {
+      forgetRecentSession();
+      ElMessage.error('加载会话历史失败');
+    }
+  } catch (error) {
+    forgetRecentSession();
+    console.error('加载会话历史失败:', error);
+    ElMessage.error('加载会话历史失败');
+  }
+};
+
+const startBlankSessionFromRoute = () => {
+  forgetRecentSession();
+  sessionStore.setCurrentSession(null);
+  resetToWelcome();
+  if (route.query.new) {
+    router.replace('/aichat');
+  }
+};
+
 const requireLogin = () => {
   userStore.initAuthState();
   if (!userStore.getLoginStatus || !userStore.getToken) {
@@ -1271,6 +1329,7 @@ const fetchAIResponse = async (userMessage) => {
               // 保存会话ID（不立即跳转，避免中断SSE）
               if (json.session_id && typeof json.session_id === 'string' && json.session_id.trim()) {
                 sessionId.value = json.session_id;
+                rememberRecentSession(json.session_id);
               }
               break;
             case 'done':
@@ -1294,9 +1353,10 @@ const fetchAIResponse = async (userMessage) => {
               // 保存会话ID并在所有数据接收完成后跳转
               if (json.session_id && typeof json.session_id === 'string' && json.session_id.trim()) {
                 sessionId.value = json.session_id;
+                rememberRecentSession(json.session_id);
                 // 如果当前路由没有sessionId参数，跳转到带sessionId的路由
                 if (!route.params.sessionId) {
-                  router.push(`/aichat/${json.session_id}`);
+                  router.replace(`/aichat/${json.session_id}`);
                 }
               }
               break;
@@ -1328,10 +1388,9 @@ const fetchAIResponse = async (userMessage) => {
 };
 
 const startNewSession = () => {
-  messages.value = [{ role: 'assistant', content: '你好！我是AI助手，有什么可以帮助你的吗？', sources: [], resultCard: null }];
-  sessionId.value = '';
-  userInput.value = '';
-  smartFollowups.value = [];
+  forgetRecentSession();
+  sessionStore.setCurrentSession(null);
+  resetToWelcome();
   router.replace('/aichat');
 };
 
@@ -1357,42 +1416,47 @@ watch(messages, () => {
 // 监听路由参数变化，重新加载会话历史
 watch(() => route.params.sessionId, async (newSessionId) => {
   if (newSessionId) {
-    try {
-      const result = await sessionStore.getSession(newSessionId);
-      if (result.success && sessionStore.currentSession) {
-        loadSessionHistory(sessionStore.currentSession);
-      } else {
-        ElMessage.error('加载会话历史失败');
-      }
-    } catch (error) {
-      console.error('加载会话历史失败:', error);
-      ElMessage.error('加载会话历史失败');
+    await openSessionById(newSessionId);
+  } else {
+    const recentSessionId = getRecentSession();
+    if (recentSessionId) {
+      await openSessionById(recentSessionId, { updateRoute: true });
+    } else {
+      sessionStore.setCurrentSession(null);
+      resetToWelcome();
     }
   }
-}, { immediate: true });
+});
+
+watch(() => route.query.new, (newFlag) => {
+  if (newFlag === '1') {
+    startBlankSessionFromRoute();
+  }
+});
 
 // 组件挂载时检查是否有当前会话或路由参数中的会话ID
 onMounted(async () => {
   loadFaqQuestions();
+  if (route.query.new === '1') {
+    startBlankSessionFromRoute();
+    scrollToBottom();
+    return;
+  }
+
   // 检查路由参数中是否有sessionId
   const routeSessionId = route.params.sessionId;
   
   if (routeSessionId) {
     // 从路由参数获取会话ID，加载会话历史
-    try {
-      const result = await sessionStore.getSession(routeSessionId);
-      if (result.success && sessionStore.currentSession) {
-        loadSessionHistory(sessionStore.currentSession);
-      } else {
-        ElMessage.error('加载会话历史失败');
-      }
-    } catch (error) {
-      console.error('加载会话历史失败:', error);
-      ElMessage.error('加载会话历史失败');
+    await openSessionById(routeSessionId);
+  } else {
+    const recentSessionId = getRecentSession();
+    if (recentSessionId) {
+      await openSessionById(recentSessionId, { updateRoute: true });
+    } else {
+      sessionStore.setCurrentSession(null);
+      resetToWelcome();
     }
-  } else if (sessionStore.currentSession) {
-    // 从store中加载会话历史
-    loadSessionHistory(sessionStore.currentSession);
   }
   
   scrollToBottom();
@@ -1570,6 +1634,7 @@ const loadSessionHistory = (session) => {
       });
     });
     sessionId.value = session.session_id;
+    rememberRecentSession(session.session_id);
   }
 };
 </script>

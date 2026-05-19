@@ -114,6 +114,10 @@ _auto_task: asyncio.Task | None = None
 
 async def start_campus_channel_scheduler():
     global _auto_task
+    pause_file = os.getenv("CAMPUS_CHANNEL_PAUSE_FILE", "/app/data/campus_channel_auto_scrape.paused")
+    if os.path.exists(pause_file):
+        logger.info("???????????????")
+        return
     if str(os.getenv("CAMPUS_CHANNEL_AUTO_SCRAPE", "false")).lower() != "true":
         return
     if _auto_task and not _auto_task.done():

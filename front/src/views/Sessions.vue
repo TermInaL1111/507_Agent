@@ -254,7 +254,7 @@ const deleteSession = async (sessionId) => {
 };
 
 const createNewSession = () => {
-  router.push('/aichat');
+  router.push('/aichat?new=1');
 };
 
 // 确认创建新会话

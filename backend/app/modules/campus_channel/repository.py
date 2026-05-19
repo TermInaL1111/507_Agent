@@ -79,8 +79,8 @@ class CampusChannelRepository:
         sort_by: str = "latest",
         indexed: str = "all",
     ) -> tuple[list[CampusChannelPost], int]:
-        stmt = select(CampusChannelPost)
-        count_stmt = select(func.count()).select_from(CampusChannelPost)
+        stmt = select(CampusChannelPost).distinct(CampusChannelPost.content_hash)
+        count_stmt = select(func.count(func.distinct(CampusChannelPost.content_hash))).select_from(CampusChannelPost)
         filters = self._filters(section, keyword, start_date, end_date, indexed)
         if filters:
             stmt = stmt.where(and_(*filters))
